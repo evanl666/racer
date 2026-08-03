@@ -1,13 +1,14 @@
 /**
- * Harbor Loop — WeChat Mini Game prototype v0.5.
+ * Harbor Loop — WeChat Mini Game prototype v0.7.2.
  *
  * Scope:
  * - One original six-lane top-down harbor track.
  * - Instant left/right lane switching anywhere on the track.
- * - Fourteen slower black AI cars on fixed lanes.
+ * - Fourteen slower black AI cars with readable lane changes.
+ * - AI lane changes are blocked inside a speed-scaled player safety zone.
  * - Overtake -> combo +1 -> player speed increases.
  * - Collision -> speed 0, combo reset, flash, recover to base speed.
- * - No AI lane-changing, audio, online leaderboard, or external assets yet.
+ * - Non-crossing loop track for clear traffic readability; no audio or online leaderboard yet.
  */
 
 const canvas = wx.createCanvas();
@@ -69,6 +70,16 @@ const SPEED_STAGE_2_GAIN = 3.2;
 const SPEED_STAGE_3_GAIN = 1.3;
 const SPEED_STAGE_4_GAIN = 0.55;
 const CHANGE_DURATION = 0.05;
+const AI_WARNING_DURATION = 0.16;
+const AI_CHANGE_DURATION = 0.20;
+const AI_MIN_DECISION_DELAY = 0.85;
+const AI_MAX_DECISION_DELAY = 2.35;
+const MAX_SIMULTANEOUS_AI_ACTIONS = 2;
+const AI_LANE_CLEAR_DISTANCE = 28;
+const AI_PLAYER_BASE_SAFETY_DISTANCE = 46;
+const AI_PLAYER_MAX_SAFETY_DISTANCE = 145;
+const AI_PLAYER_SAFETY_PER_SPEED = 0.50;
+const AI_PLAYER_REAR_SAFETY_DISTANCE = 24;
 const COLLISION_PATH_DISTANCE = 11.5;
 const COLLISION_LANE_DISTANCE = 0.46;
 
@@ -78,22 +89,22 @@ const RESTART_BUTTON = { x: 145, y: 689, w: 100, h: 38 };
 
 // Original harbor-like course. It intentionally does not trace PixelJunk's map.
 const CONTROL_POINTS = [
-  { x: 82,  y: 151 },
-  { x: 189, y: 105 },
-  { x: 310, y: 139 },
-  { x: 334, y: 232 },
-  { x: 273, y: 304 },
-  { x: 174, y: 330 },
-  { x: 92,  y: 384 },
-  { x: 73,  y: 494 },
-  { x: 116, y: 595 },
-  { x: 224, y: 636 },
-  { x: 316, y: 588 },
-  { x: 332, y: 489 },
-  { x: 283, y: 410 },
-  { x: 199, y: 390 },
-  { x: 126, y: 334 },
-  { x: 64,  y: 249 }
+  { x: 86,  y: 156 },
+  { x: 170, y: 116 },
+  { x: 272, y: 126 },
+  { x: 326, y: 180 },
+  { x: 338, y: 268 },
+  { x: 321, y: 350 },
+  { x: 338, y: 447 },
+  { x: 324, y: 536 },
+  { x: 272, y: 608 },
+  { x: 184, y: 640 },
+  { x: 98,  y: 615 },
+  { x: 58,  y: 548 },
+  { x: 52,  y: 456 },
+  { x: 68,  y: 368 },
+  { x: 52,  y: 274 },
+  { x: 60,  y: 194 }
 ];
 
 function catmullRom(p0, p1, p2, p3, t) {
@@ -238,19 +249,14 @@ function drawBackground() {
   }
 
   ctx.fillStyle = COLORS.landDark;
-  ctx.beginPath(); ctx.ellipse(197, 226, 74, 47, -0.18, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(198, 382, 90, 170, -0.03, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = COLORS.land;
-  ctx.beginPath(); ctx.ellipse(197, 222, 66, 39, -0.18, 0, Math.PI * 2); ctx.fill();
-
-  ctx.fillStyle = COLORS.landDark;
-  ctx.beginPath(); ctx.ellipse(220, 515, 62, 42, 0.12, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = COLORS.land;
-  ctx.beginPath(); ctx.ellipse(220, 510, 54, 35, 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(198, 376, 81, 159, -0.03, 0, Math.PI * 2); ctx.fill();
 
   ctx.fillStyle = 'rgba(242,245,232,0.65)';
   for (const dock of [
-    [151, 195, 24, 8, -0.2], [233, 246, 28, 8, 0.25],
-    [186, 488, 25, 8, -0.1], [245, 530, 27, 8, 0.22]
+    [151, 246, 26, 8, -0.16], [245, 302, 30, 8, 0.22],
+    [157, 462, 27, 8, -0.10], [244, 520, 29, 8, 0.20]
   ]) {
     ctx.save(); ctx.translate(dock[0], dock[1]); ctx.rotate(dock[4]);
     ctx.fillRect(-dock[2] / 2, -dock[3] / 2, dock[2], dock[3]); ctx.restore();
@@ -279,7 +285,7 @@ function drawTrack() {
   ctx.restore();
 }
 
-function drawVehicle(distance, laneIndex, style, alpha = 1) {
+function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false) {
   const p = sampleAtDistance(distance, laneIndex);
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -306,6 +312,13 @@ function drawVehicle(distance, laneIndex, style, alpha = 1) {
   ctx.fillStyle = style.lights;
   ctx.fillRect(6.9, -3.3, 1.3, 2.2);
   ctx.fillRect(6.9, 1.1, 1.3, 2.2);
+
+  if (indicatorDirection !== 0 && indicatorOn) {
+    ctx.fillStyle = '#FFD55C';
+    const indicatorY = indicatorDirection > 0 ? 4.15 : -5.35;
+    ctx.fillRect(2.8, indicatorY, 3.2, 1.4);
+    ctx.fillRect(-5.5, indicatorY, 2.6, 1.4);
+  }
   ctx.restore();
 }
 
@@ -378,12 +391,21 @@ function resetGame() {
   player.passPopElapsed = 10;
   player.collisionCount = 0;
 
-  aiCars = AI_BLUEPRINTS.map((blueprint) => {
+  aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
     const distance = arc.total * blueprint.fraction;
     return {
+      id: index,
       distance,
       lane: blueprint.lane,
+      visualLane: blueprint.lane,
+      laneFrom: blueprint.lane,
+      laneTo: blueprint.lane,
+      baseSpeed: blueprint.speed,
       speed: blueprint.speed,
+      state: 'IDLE', // IDLE | WARNING | CHANGING
+      stateElapsed: 0,
+      direction: 0,
+      decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
       passIndex: Math.floor((player.distance - distance) / arc.total)
     };
   });
@@ -535,15 +557,139 @@ function updatePlayer(dt) {
   player.distance += player.speed * dt;
 }
 
+function forwardPathDistance(fromDistance, toDistance) {
+  return wrapDistance(toDistance - fromDistance);
+}
+
+// At base speed, AI cars keep a modest no-lane-change zone in front of the player.
+// As the red car accelerates, this zone grows so high-speed runs remain readable and fair.
+function currentAiPlayerSafetyDistance() {
+  const speedExtra = Math.max(0, player.speed - PLAYER_BASE_SPEED) * AI_PLAYER_SAFETY_PER_SPEED;
+  return Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
+}
+
+function playerIsApproachingAi(car) {
+  const playerToCar = forwardPathDistance(player.distance, car.distance);
+  if (playerToCar > 0.1 && playerToCar < currentAiPlayerSafetyDistance()) return true;
+
+  // Also avoid starting a lane change immediately behind a player who has just passed.
+  const carToPlayer = forwardPathDistance(car.distance, player.distance);
+  return carToPlayer > 0.1 && carToPlayer < AI_PLAYER_REAR_SAFETY_DISTANCE;
+}
+
+function countActiveAiLaneChanges() {
+  let count = 0;
+  for (const car of aiCars) {
+    if (car.state === 'WARNING' || car.state === 'CHANGING') count += 1;
+  }
+  return count;
+}
+
+function nearestAiAhead(car, lane, maxDistance = 90) {
+  let nearest = null;
+  let nearestDistance = maxDistance;
+  for (const other of aiCars) {
+    if (other === car || Math.abs(other.visualLane - lane) > 0.55) continue;
+    const distance = forwardPathDistance(car.distance, other.distance);
+    if (distance > 0.1 && distance < nearestDistance) {
+      nearest = other;
+      nearestDistance = distance;
+    }
+  }
+  return nearest ? { car: nearest, distance: nearestDistance } : null;
+}
+
+function isAiTargetLaneClear(car, targetLane) {
+  for (const other of aiCars) {
+    if (other === car || Math.abs(other.visualLane - targetLane) > 0.62) continue;
+    if (circularDistance(car.distance, other.distance) < AI_LANE_CLEAR_DISTANCE) return false;
+  }
+
+  if (Math.abs(player.visualLane - targetLane) < 0.72 &&
+      circularDistance(car.distance, player.distance) < currentAiPlayerSafetyDistance()) {
+    return false;
+  }
+  return true;
+}
+
+function shuffledDirections() {
+  return Math.random() < 0.5 ? [-1, 1] : [1, -1];
+}
+
+function tryBeginAiLaneChange(car) {
+  if (countActiveAiLaneChanges() >= MAX_SIMULTANEOUS_AI_ACTIONS) return false;
+  if (playerIsApproachingAi(car)) return false;
+
+  const ahead = nearestAiAhead(car, car.visualLane, 62);
+  const needsToPass = Boolean(ahead && ahead.car.speed + 2 < car.baseSpeed && ahead.distance < 46);
+  if (!needsToPass && Math.random() > 0.34) return false;
+
+  const directions = shuffledDirections();
+  for (const direction of directions) {
+    const targetLane = car.lane + direction;
+    if (targetLane < 0 || targetLane >= LANE_COUNT) continue;
+    if (!isAiTargetLaneClear(car, targetLane)) continue;
+
+    car.state = 'WARNING';
+    car.stateElapsed = 0;
+    car.direction = direction;
+    car.laneFrom = car.visualLane;
+    car.laneTo = targetLane;
+    return true;
+  }
+  return false;
+}
+
 function updateAi(dt) {
-  for (const car of aiCars) car.distance += car.speed * dt;
+  for (const car of aiCars) {
+    car.decisionTimer -= dt;
+
+    if (car.state === 'IDLE' && car.decisionTimer <= 0) {
+      car.decisionTimer = AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY);
+      tryBeginAiLaneChange(car);
+    } else if (car.state === 'WARNING') {
+      car.stateElapsed += dt;
+      if (playerIsApproachingAi(car) || !isAiTargetLaneClear(car, car.laneTo)) {
+        car.state = 'IDLE';
+        car.stateElapsed = 0;
+        car.direction = 0;
+        car.decisionTimer = 0.55 + Math.random() * 0.75;
+      } else if (car.stateElapsed >= AI_WARNING_DURATION) {
+        car.state = 'CHANGING';
+        car.stateElapsed = 0;
+        car.laneFrom = car.visualLane;
+        car.lane = car.laneTo;
+      }
+    } else if (car.state === 'CHANGING') {
+      car.stateElapsed += dt;
+      const t = Math.min(1, car.stateElapsed / AI_CHANGE_DURATION);
+      const eased = t * t * (3 - 2 * t);
+      car.visualLane = car.laneFrom + (car.laneTo - car.laneFrom) * eased;
+      if (t >= 1) {
+        car.visualLane = car.laneTo;
+        car.lane = car.laneTo;
+        car.state = 'IDLE';
+        car.stateElapsed = 0;
+        car.direction = 0;
+        car.decisionTimer = 0.9 + Math.random() * 1.5;
+      }
+    }
+
+    // Simple traffic following prevents faster AI cars from visually stacking.
+    const ahead = nearestAiAhead(car, car.visualLane, 34);
+    let desiredSpeed = car.baseSpeed;
+    if (ahead && ahead.distance < 24) desiredSpeed = Math.min(desiredSpeed, ahead.car.speed * 0.96);
+    const response = Math.min(1, dt * 4.5);
+    car.speed += (desiredSpeed - car.speed) * response;
+    car.distance += car.speed * dt;
+  }
 }
 
 function detectCollisions() {
   if (player.invincible > 0 || player.state === 'CRASHED') return false;
 
   for (const car of aiCars) {
-    const laneDistance = Math.abs(player.visualLane - car.lane);
+    const laneDistance = Math.abs(player.visualLane - car.visualLane);
     const pathDistance = circularDistance(player.distance, car.distance);
     if (laneDistance <= COLLISION_LANE_DISTANCE && pathDistance <= COLLISION_PATH_DISTANCE) {
       beginCollision();
@@ -575,14 +721,19 @@ function detectOvertakes() {
   }
 }
 
-function drawCars() {
-  for (const car of aiCars) drawVehicle(car.distance, car.lane, AI_STYLE);
+function drawAiCar(car) {
+  const indicatorOn = car.state === 'WARNING' && Math.floor(car.stateElapsed * 30) % 2 === 0;
+  drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn);
+}
 
-  let alpha = 1;
-  if (player.invincible > 0) {
-    alpha = Math.floor(player.invincible * 12) % 2 === 0 ? 0.25 : 1;
-  }
-  drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, alpha);
+function playerAlpha() {
+  if (player.invincible > 0) return Math.floor(player.invincible * 12) % 2 === 0 ? 0.25 : 1;
+  return 1;
+}
+
+function drawCars() {
+  for (const car of aiCars) drawAiCar(car);
+  drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
 }
 
 function drawButton(rect, label, sublabel, enabled) {
@@ -625,7 +776,7 @@ function drawHud() {
   ctx.fillText('HARBOR LOOP', 32, 47);
   ctx.fillStyle = COLORS.muted;
   ctx.font = '9px sans-serif';
-  ctx.fillText('V0.6.1 · SPEED CURVE', 32, 66);
+  ctx.fillText('V0.7.2 · SPEED-SCALED AI SAFETY', 32, 66);
 
   ctx.textAlign = 'center';
   ctx.fillStyle = player.combo > 0 ? COLORS.accentLight : COLORS.text;
@@ -649,7 +800,7 @@ function drawHud() {
   ctx.fillStyle = '#10272B';
   ctx.textAlign = 'center';
   ctx.font = '700 10px sans-serif';
-  ctx.fillText('← / →  INSTANT SWITCH · PASS TO SPEED UP', 195, 121);
+  ctx.fillText('FAST PLAYER = LARGER AI NO-CHANGE ZONE', 195, 121);
 
   drawSmallPill(18, 689, 104, 'PASSES', player.totalPasses);
   drawSmallPill(268, 689, 104, 'BEST COMBO', player.bestCombo);

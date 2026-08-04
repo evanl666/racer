@@ -1,7 +1,17 @@
 {
-  "description": "Harbor Loop V0.9.5 - on-screen controls and mobile throttle",
+  "description": "Harbor Loop V0.9.6 - TypeScript source split into modules",
   "packOptions": {
-    "ignore": []
+    "ignore": [
+      { "type": "folder", "value": "node_modules" },
+      { "type": "folder", "value": "src" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "tests" },
+      { "type": "file", "value": "index.html" },
+      { "type": "file", "value": "package.json" },
+      { "type": "file", "value": "package-lock.json" },
+      { "type": "file", "value": "tsconfig.json" }
+    ],
+    "include": []
   },
   "setting": {
     "urlCheck": false,
@@ -26,11 +36,25 @@
       "ignore": [],
       "disablePlugins": [],
       "outputPath": ""
-    }
+    },
+    "compileWorklet": false,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
   },
   "compileType": "game",
   "libVersion": "3.8.10",
   "appid": "touristappid",
-  "projectname": "harbor-loop-v0-9-5",
-  "condition": {}
+  "projectname": "harbor-loop-v0-9-6",
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "isGameTourist": false,
+  "editorSetting": {}
 }

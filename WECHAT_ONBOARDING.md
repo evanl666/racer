@@ -11,16 +11,23 @@
 
 ```text
 racer/
-├── game.js
+├── game.js                    # 打包产物，小游戏入口（由 src/ 生成，勿手改）
 ├── game.json
 ├── project.config.json
 ├── index.html                 # 仅用于浏览器快速测试
+├── src/                       # TypeScript 源码
+├── scripts/build.mjs          # esbuild 打包脚本
+├── tests/                     # 无头测试
 ├── README.md
 ├── NOTES.md
 └── WECHAT_ONBOARDING.md
 ```
 
 微信环境主要使用 `game.js`、`game.json` 和 `project.config.json`；`index.html` 只用于 Chrome 浏览器预览。
+
+`game.js` 已经提交进仓库，所以导入后可以直接编译，不需要先 `npm install`。但如果你改了 `src/` 下的代码，必须先执行 `npm run build` 重新生成 `game.js`，微信开发者工具才会看到改动。
+
+`src/`、`scripts/`、`tests/`、`node_modules/` 已在 `project.config.json` 的 `packOptions.ignore` 中排除，不会被打进小游戏包体。
 
 ---
 
@@ -74,31 +81,23 @@ racer/
 
 ## C. 把正式 AppID 放进本项目
 
-打开 `project.config.json`，将：
-
-```json
-"appid": "touristappid"
-```
-
-替换为：
-
-```json
-"appid": "你的正式小游戏 AppID"
-```
-
-例如：
+**不要改 `project.config.json`。** 仓库里它固定保持 `"appid": "touristappid"`，真实 AppID 放在本地不提交的 `project.private.config.json` 中：
 
 ```json
 {
-  "compileType": "game",
-  "appid": "wx1234567890abcdef",
-  "projectname": "harbor-loop-prototype"
+  "appid": "你的正式小游戏 AppID"
 }
 ```
 
+`project.private.config.json` 已经写进 `.gitignore`，不会被提交。微信官方规定该文件中的同名字段优先于 `project.config.json`，所以开发者工具实际使用的就是这里的 AppID。
+
+也可以直接在开发者工具的 **详情 → 基本信息** 里修改 AppID，工具会自动写进 `project.private.config.json`。
+
 保存后，在微信开发者工具中重新导入项目，或关闭再打开工程。
 
-建议不要频繁提交真实 AppID 的变化；如果以后需要多个环境，可以另建本地配置方案。
+这样做的原因：AppID 本身不是密钥，公开不会造成安全风险，但它绑定你的小游戏账号主体，没有必要出现在公开仓库里。团队协作时每个人也可以用各自的测试 AppID，互不影响。
+
+新克隆仓库后需要重新创建这个文件，否则会以 `touristappid` 打开（模拟器可用，真机预览不可用）。
 
 ---
 

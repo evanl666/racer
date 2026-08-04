@@ -1,0 +1,17 @@
+{
+  "name": "harbor-loop",
+  "version": "0.9.6",
+  "private": true,
+  "description": "Harbor Loop - WeChat Mini Game racing prototype",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "check": "tsc --noEmit",
+    "test": "node scripts/build.mjs && node tests/controls.test.mjs",
+    "verify": "npm run check && npm test"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3"
+  }
+}

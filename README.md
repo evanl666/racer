@@ -1,8 +1,38 @@
-# Harbor Loop V0.9.5 — 屏幕按键 + 手机油门
+# Harbor Loop V0.9.6 — TypeScript 模块化
 
-微信小游戏 / 浏览器玩法原型。
+微信小游戏 / 浏览器玩法原型。原生 Canvas 2D，无游戏引擎依赖。
 
-## V0.9.5 本版重点
+## 开发
+
+源码在 `src/`（TypeScript），由 esbuild 打包成根目录的 `game.js`。**不要直接改 `game.js`，它是生成文件。**
+
+```bash
+npm install
+npm run build     # src/ -> game.js
+npm run watch     # 改动自动重新打包
+npm run check     # tsc 类型检查
+npm test          # 打包 + 跑无头输入测试
+npm run verify    # check + test
+```
+
+`game.js` 会提交进仓库，因此微信开发者工具导入后可以直接编译，不需要先装依赖。改完代码记得 `npm run build` 再提交。
+
+### 目录结构
+
+| 路径 | 内容 |
+|---|---|
+| `src/main.ts` | 入口：帧循环和模块装配 |
+| `src/platform.ts` | 唯一直接调用 `wx` 的模块；画布、缩放、震动、音频上下文 |
+| `src/config.ts` | 全部玩法数值（车道、速度档、AI、碰撞） |
+| `src/track.ts` | 赛道几何与沿路面推进的距离计算 |
+| `src/state.ts` | 玩家和 AI 的可变状态、速度档查询 |
+| `src/player.ts` `src/ai.ts` `src/scoring.ts` | 玩家行为、AI 行为、碰撞与超车计分 |
+| `src/input.ts` `src/controls.ts` | 触摸/键盘输入、屏幕按键布局 |
+| `src/audio.ts` | 程序合成音频（通过快照解耦，不依赖游戏状态） |
+| `src/render/` | 绘制：primitives / scenery / road / vehicles / hud |
+| `tests/` | Node vm 里的无头测试，模拟微信触摸事件 |
+
+## V0.9.5 重点
 
 手机端补上了缺失的一半玩法：屏幕底部加入三个可见按键，触屏也能加油门。
 

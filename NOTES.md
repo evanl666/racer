@@ -1,5 +1,18 @@
 # Harbor Loop Development Notes
 
+## V0.9.6 — TypeScript 重构与模块拆分
+
+**玩法没有任何改动**，这一版只动工程结构，为后续加排行榜、结算页、皮肤等内容做准备。
+
+- 源码改为 TypeScript，放在 `src/`，由 esbuild 打包成根目录的 `game.js`。
+- 原来的单文件 1388 行拆成 16 个模块：平台适配、配置、赛道几何、音频、状态、玩家、AI、计分、输入、控件布局、渲染（primitives / scenery / road / vehicles / hud）、入口。
+- `game.js` 变成生成文件，文件头有 GENERATED 标记；改代码请改 `src/`，然后 `npm run build`。仍然提交到仓库，这样微信开发者工具导入后不需要先构建。
+- `tsc --noEmit` 开启 strict、noUnusedLocals、noUnusedParameters 全量检查。
+- 音频不再直接读游戏状态：`audio.update(dt, snapshot)` 接收一个快照，因此 audio 和 state 互不依赖，可以各自单独测试。
+- 新增 `tests/controls.test.mjs`：在 Node 的 vm 里加载打包产物并模拟微信触摸事件，26 项断言覆盖油门、多点触控、滑动释放、触摸取消、车道按键和 30 秒带车流的完整模拟。`npm run verify` 一次跑类型检查和测试。
+- `project.config.json` 的 `packOptions.ignore` 排除 `node_modules`、`src`、`scripts`、`tests` 等，避免开发文件被打进小游戏包体。
+- 新增 `.gitignore`，忽略 `node_modules` 和微信开发者工具生成的 `project.private.config.json`。
+
 ## V0.9.5 — On-screen controls and mobile throttle
 
 - 后续版本统一从 V0.9.5 继续开发。

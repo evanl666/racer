@@ -2,7 +2,13 @@
 
 import { app, openMenu, retryRun } from '../app';
 import { DIFFICULTY_PROFILES } from '../difficulty';
-import { leaderboardAvailable, requestFriendRanking, sharedCanvas } from '../leaderboard';
+import {
+  globalBoard,
+  globalBoardAvailable,
+  leaderboardAvailable,
+  requestFriendRanking,
+  sharedCanvas
+} from '../leaderboard';
 import { modeById } from '../modes';
 import { nextStarTarget, starsFor } from '../progress';
 import { drawStar } from '../render/icons';
@@ -37,9 +43,29 @@ const OUTCOME: Record<string, { text: string; fill: string }> = {
 };
 
 let rankingRequested = false;
+/** Which board the rank card is showing. Friends first: it loads instantly. */
+let boardTab: 'friends' | 'global' = 'friends';
+
+const TAB_FRIENDS: Rect = { x: 0, y: 0, w: 0, h: 0 };
+const TAB_GLOBAL: Rect = { x: 0, y: 0, w: 0, h: 0 };
+
+function layoutTabs(): void {
+  const w = 66;
+  const h = 22;
+  TAB_GLOBAL.x = RANK_CARD.x + RANK_CARD.w - 14 - w;
+  TAB_GLOBAL.y = RANK_CARD.y + 12;
+  TAB_GLOBAL.w = w;
+  TAB_GLOBAL.h = h;
+
+  TAB_FRIENDS.x = TAB_GLOBAL.x - w - 6;
+  TAB_FRIENDS.y = TAB_GLOBAL.y;
+  TAB_FRIENDS.w = w;
+  TAB_FRIENDS.h = h;
+}
 
 export function enterResultScreen(): void {
   rankingRequested = false;
+  boardTab = 'friends';
 }
 
 export function drawResult(): void {
@@ -107,21 +133,29 @@ export function drawResult(): void {
 
 function drawRankingPanel(): void {
   panel(RANK_CARD, { fill: UI.chip, radius: 16, lift: 5 });
+  layoutTabs();
 
   ctx.textAlign = 'left';
   ctx.fillStyle = UI.card;
   ctx.font = '900 12px sans-serif';
-  ctx.fillText('好友排行榜', RANK_CARD.x + 14, RANK_CARD.y + 26);
+  ctx.fillText('排行榜', RANK_CARD.x + 14, RANK_CARD.y + 28);
 
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(255,246,228,0.45)';
-  ctx.font = '600 9px sans-serif';
-  ctx.fillText('按生涯积分排名', RANK_CARD.x + RANK_CARD.w - 14, RANK_CARD.y + 26);
+  drawTab(TAB_FRIENDS, '好友', boardTab === 'friends');
+  drawTab(TAB_GLOBAL, '全服', boardTab === 'global');
+
+  const listY = RANK_CARD.y + 42;
+  const listH = RANK_CARD.h - 52;
+
+  if (boardTab === 'friends') drawFriendBoard(listY, listH);
+  else drawGlobalBoard(listY, listH);
+}
+
+function drawTab(rect: Rect, label: string, active: boolean): void {
+  chip(rect, label, active ? UI.primary : 'rgba(255,246,228,0.12)', active ? UI.ink : UI.card, 10);
+}
+
+function drawFriendBoard(listY: number, listH: number): void {
   ctx.textAlign = 'center';
-
-  const listY = RANK_CARD.y + 38;
-  const listH = RANK_CARD.h - 48;
-
   if (!leaderboardAvailable()) {
     ctx.fillStyle = 'rgba(255,246,228,0.38)';
     ctx.font = '600 11px sans-serif';
@@ -145,8 +179,77 @@ function drawRankingPanel(): void {
   }
 }
 
+function drawGlobalBoard(listY: number, listH: number): void {
+  const summary = app.result;
+  ctx.textAlign = 'center';
+
+  if (!summary || !globalBoardAvailable()) {
+    ctx.fillStyle = 'rgba(255,246,228,0.38)';
+    ctx.font = '600 11px sans-serif';
+    ctx.fillText('全服榜需要配置云开发环境', DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2 - 8);
+    ctx.font = '600 9px sans-serif';
+    ctx.fillText('见 README 的云开发部署说明', DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2 + 10);
+    return;
+  }
+
+  const board = globalBoard(summary.modeId, summary.difficulty);
+  if (board.state === 'loading') {
+    ctx.fillStyle = 'rgba(255,246,228,0.38)';
+    ctx.font = '600 11px sans-serif';
+    ctx.fillText('加载中…', DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
+    return;
+  }
+  if (board.state === 'failed' || board.rows.length === 0) {
+    ctx.fillStyle = 'rgba(255,246,228,0.38)';
+    ctx.font = '600 11px sans-serif';
+    ctx.fillText(board.state === 'failed' ? '加载失败' : '还没有人上榜，你可以是第一个', DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
+    return;
+  }
+
+  const rowH = 22;
+  const visible = Math.min(board.rows.length, Math.floor((listH - 16) / rowH));
+  for (let i = 0; i < visible; i++) {
+    const row = board.rows[i];
+    const y = listY + i * rowH;
+
+    if (row.self) {
+      ctx.fillStyle = 'rgba(87,213,203,0.16)';
+      ctx.fillRect(RANK_CARD.x + 8, y - 2, RANK_CARD.w - 16, rowH - 2);
+    }
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = i < 3 ? UI.primary : 'rgba(255,246,228,0.5)';
+    ctx.font = '900 11px monospace';
+    ctx.fillText(String(row.rank), RANK_CARD.x + 14, y + 12);
+
+    ctx.fillStyle = UI.card;
+    ctx.font = '600 11px sans-serif';
+    ctx.fillText(row.nickname.slice(0, 8), RANK_CARD.x + 40, y + 12);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = row.self ? UI.primary : 'rgba(255,246,228,0.75)';
+    ctx.font = '900 11px monospace';
+    ctx.fillText(String(row.score), RANK_CARD.x + RANK_CARD.w - 14, y + 12);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,246,228,0.5)';
+  ctx.font = '700 9px sans-serif';
+  const rankText = board.selfRank ? `你排第 ${board.selfRank} / ${board.total}` : `共 ${board.total} 人上榜`;
+  ctx.fillText(rankText, DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h - 10);
+}
+
 /** Returns true when the tap was consumed. */
 export function handleResultTap(x: number, y: number): boolean {
+  layoutTabs();
+  if (hits(TAB_FRIENDS, x, y)) {
+    boardTab = 'friends';
+    return true;
+  }
+  if (hits(TAB_GLOBAL, x, y)) {
+    boardTab = 'global';
+    return true;
+  }
   if (hits(RETRY, x, y)) {
     retryRun();
     return true;

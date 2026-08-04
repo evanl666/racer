@@ -1,6 +1,6 @@
 /** Screen state machine and the navigation between menu, race and results. */
 
-import { submitFriendScore } from './leaderboard';
+import { submitFriendScore, submitGlobalScore } from './leaderboard';
 import { MODES } from './modes';
 import type { Difficulty, ModeId, RunOutcome } from './modes/types';
 import { modeById } from './modes';
@@ -69,6 +69,9 @@ export function finishRun(): void {
     scoreUnit: mode.scoreUnit
   };
 
-  if (newBest) submitFriendScore(careerPoints());
+  if (newBest) {
+    submitFriendScore(careerPoints());
+    submitGlobalScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
+  }
   app.screen = 'RESULT';
 }

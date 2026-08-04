@@ -1,0 +1,9 @@
+{
+  "name": "topScores",
+  "version": "1.0.0",
+  "description": "Returns a Harbor Loop leaderboard page and the caller's rank",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

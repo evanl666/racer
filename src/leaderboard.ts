@@ -6,9 +6,15 @@
  * that is the only place allowed to read friends' data. We hand it a message and
  * blit the shared canvas it renders into.
  *
+ * The global and daily boards need real storage, which the open data context
+ * cannot provide — it only ever sees friends. Those go through CloudBase.
+ *
  * Outside WeChat every entry point degrades to a no-op so the browser build runs
  * unchanged.
  */
+
+import { callFunction, cloudAvailable } from './cloud';
+import type { Difficulty, ModeId } from './modes/types';
 
 type OpenDataContext = {
   postMessage(message: unknown): void;
@@ -76,4 +82,84 @@ export function requestFriendRanking(width: number, height: number, dpr: number)
 export function sharedCanvas(): WxCanvas | null {
   const ctx = context();
   return ctx ? ctx.canvas : null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Global / daily board, backed by CloudBase
+// ---------------------------------------------------------------------------
+
+export interface GlobalRow {
+  rank: number;
+  nickname: string;
+  score: number;
+  self: boolean;
+}
+
+export interface GlobalBoard {
+  rows: GlobalRow[];
+  selfRank: number | null;
+  total: number;
+  state: 'idle' | 'loading' | 'ready' | 'failed' | 'unavailable';
+}
+
+const boards = new Map<string, GlobalBoard>();
+
+function boardKey(modeId: ModeId, difficulty: Difficulty, day: string): string {
+  return `${modeId}:${difficulty}:${day}`;
+}
+
+export function globalBoardAvailable(): boolean {
+  return cloudAvailable();
+}
+
+/** Publishes a score to the global board. Failures are silent by design. */
+export function submitGlobalScore(
+  modeId: ModeId,
+  difficulty: Difficulty,
+  score: number,
+  lowerIsBetter: boolean,
+  day = ''
+): void {
+  if (!cloudAvailable()) return;
+  void callFunction('submitScore', { modeId, difficulty, score, lowerIsBetter, day });
+  // The cached page is now stale.
+  boards.delete(boardKey(modeId, difficulty, day));
+}
+
+/**
+ * Returns the cached board, kicking off a fetch the first time it is asked for.
+ * The result screen simply redraws every frame and shows whatever state it is in.
+ */
+export function globalBoard(modeId: ModeId, difficulty: Difficulty, day = ''): GlobalBoard {
+  const key = boardKey(modeId, difficulty, day);
+  const cached = boards.get(key);
+  if (cached) return cached;
+
+  const board: GlobalBoard = {
+    rows: [],
+    selfRank: null,
+    total: 0,
+    state: cloudAvailable() ? 'loading' : 'unavailable'
+  };
+  boards.set(key, board);
+  if (board.state === 'unavailable') return board;
+
+  void callFunction<{
+    ok?: boolean;
+    rows?: GlobalRow[];
+    selfRank?: number | null;
+    total?: number;
+  }>('topScores', { modeId, difficulty, day, limit: 20 }).then((result) => {
+    if (!result || !result.ok) {
+      board.state = 'failed';
+      return;
+    }
+    board.rows = result.rows ?? [];
+    board.selfRank = result.selfRank ?? null;
+    board.total = result.total ?? 0;
+    board.state = 'ready';
+  });
+
+  return board;
 }

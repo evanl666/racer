@@ -669,16 +669,69 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/cloud.ts
+  var CLOUD_ENV = "";
+  var initialised = false;
+  var unavailable = false;
+  function api() {
+    if (unavailable) return null;
+    const scope = wx;
+    const cloud = scope.cloud;
+    if (!cloud || typeof cloud.callFunction !== "function" || !CLOUD_ENV) {
+      unavailable = true;
+      return null;
+    }
+    if (!initialised) {
+      try {
+        cloud.init({ env: CLOUD_ENV, traceUser: true });
+        initialised = true;
+      } catch (error) {
+        unavailable = true;
+        return null;
+      }
+    }
+    return cloud;
+  }
+  function cloudAvailable() {
+    return api() !== null;
+  }
+  function callFunction(name, data) {
+    const cloud = api();
+    if (!cloud) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        cloud.callFunction({
+          name,
+          data,
+          success: (res) => {
+            var _a;
+            return finish((_a = res == null ? void 0 : res.result) != null ? _a : null);
+          },
+          fail: () => finish(null)
+        });
+      } catch (error) {
+        finish(null);
+      }
+      setTimeout(() => finish(null), 6e3);
+    });
+  }
+
   // src/leaderboard.ts
   var openDataContext = null;
   var openDataChecked = false;
   function context() {
     if (openDataChecked) return openDataContext;
     openDataChecked = true;
-    const api = wx;
-    if (typeof api.getOpenDataContext === "function") {
+    const api2 = wx;
+    if (typeof api2.getOpenDataContext === "function") {
       try {
-        openDataContext = api.getOpenDataContext();
+        openDataContext = api2.getOpenDataContext();
       } catch (error) {
         openDataContext = null;
       }
@@ -689,10 +742,10 @@ var HarborLoop = (() => {
     return context() !== null;
   }
   function submitFriendScore(points) {
-    const api = wx;
-    if (typeof api.setUserCloudStorage !== "function") return;
+    const api2 = wx;
+    if (typeof api2.setUserCloudStorage !== "function") return;
     try {
-      api.setUserCloudStorage({
+      api2.setUserCloudStorage({
         // WeChat requires string values; the key is what the open data context reads.
         KVDataList: [{ key: "career", value: String(Math.round(points)) }],
         fail: () => {
@@ -714,6 +767,43 @@ var HarborLoop = (() => {
   function sharedCanvas() {
     const ctx2 = context();
     return ctx2 ? ctx2.canvas : null;
+  }
+  var boards = /* @__PURE__ */ new Map();
+  function boardKey(modeId, difficulty, day) {
+    return `${modeId}:${difficulty}:${day}`;
+  }
+  function globalBoardAvailable() {
+    return cloudAvailable();
+  }
+  function submitGlobalScore(modeId, difficulty, score, lowerIsBetter, day = "") {
+    if (!cloudAvailable()) return;
+    void callFunction("submitScore", { modeId, difficulty, score, lowerIsBetter, day });
+    boards.delete(boardKey(modeId, difficulty, day));
+  }
+  function globalBoard(modeId, difficulty, day = "") {
+    const key2 = boardKey(modeId, difficulty, day);
+    const cached = boards.get(key2);
+    if (cached) return cached;
+    const board = {
+      rows: [],
+      selfRank: null,
+      total: 0,
+      state: cloudAvailable() ? "loading" : "unavailable"
+    };
+    boards.set(key2, board);
+    if (board.state === "unavailable") return board;
+    void callFunction("topScores", { modeId, difficulty, day, limit: 20 }).then((result) => {
+      var _a, _b, _c;
+      if (!result || !result.ok) {
+        board.state = "failed";
+        return;
+      }
+      board.rows = (_a = result.rows) != null ? _a : [];
+      board.selfRank = (_b = result.selfRank) != null ? _b : null;
+      board.total = (_c = result.total) != null ? _c : 0;
+      board.state = "ready";
+    });
+    return board;
   }
 
   // src/effects.ts
@@ -2184,7 +2274,10 @@ var HarborLoop = (() => {
       newBest,
       scoreUnit: mode.scoreUnit
     };
-    if (newBest) submitFriendScore(careerPoints());
+    if (newBest) {
+      submitFriendScore(careerPoints());
+      submitGlobalScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
+    }
     app.screen = "RESULT";
   }
 
@@ -2734,19 +2827,19 @@ var HarborLoop = (() => {
     return `mode=${summary.modeId}&difficulty=${summary.difficulty}`;
   }
   function shareRun() {
-    const api = wx;
-    if (typeof api.shareAppMessage !== "function") return;
+    const api2 = wx;
+    if (typeof api2.shareAppMessage !== "function") return;
     try {
-      api.shareAppMessage({ title: shareTitle(), query: shareQuery() });
+      api2.shareAppMessage({ title: shareTitle(), query: shareQuery() });
     } catch (error) {
     }
   }
   function installShareMenu() {
     var _a, _b;
-    const api = wx;
+    const api2 = wx;
     try {
-      (_a = api.showShareMenu) == null ? void 0 : _a.call(api, { withShareTicket: true });
-      (_b = api.onShareAppMessage) == null ? void 0 : _b.call(api, () => ({ title: shareTitle(), query: shareQuery() }));
+      (_a = api2.showShareMenu) == null ? void 0 : _a.call(api2, { withShareTicket: true });
+      (_b = api2.onShareAppMessage) == null ? void 0 : _b.call(api2, () => ({ title: shareTitle(), query: shareQuery() }));
     } catch (error) {
     }
   }
@@ -2766,8 +2859,24 @@ var HarborLoop = (() => {
     running: { text: "", fill: UI.primary }
   };
   var rankingRequested = false;
+  var boardTab = "friends";
+  var TAB_FRIENDS = { x: 0, y: 0, w: 0, h: 0 };
+  var TAB_GLOBAL = { x: 0, y: 0, w: 0, h: 0 };
+  function layoutTabs() {
+    const w = 66;
+    const h = 22;
+    TAB_GLOBAL.x = RANK_CARD.x + RANK_CARD.w - 14 - w;
+    TAB_GLOBAL.y = RANK_CARD.y + 12;
+    TAB_GLOBAL.w = w;
+    TAB_GLOBAL.h = h;
+    TAB_FRIENDS.x = TAB_GLOBAL.x - w - 6;
+    TAB_FRIENDS.y = TAB_GLOBAL.y;
+    TAB_FRIENDS.w = w;
+    TAB_FRIENDS.h = h;
+  }
   function enterResultScreen() {
     rankingRequested = false;
+    boardTab = "friends";
   }
   function drawResult() {
     var _a;
@@ -2821,17 +2930,23 @@ var HarborLoop = (() => {
   }
   function drawRankingPanel() {
     panel(RANK_CARD, { fill: UI.chip, radius: 16, lift: 5 });
+    layoutTabs();
     ctx.textAlign = "left";
     ctx.fillStyle = UI.card;
     ctx.font = "900 12px sans-serif";
-    ctx.fillText("好友排行榜", RANK_CARD.x + 14, RANK_CARD.y + 26);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(255,246,228,0.45)";
-    ctx.font = "600 9px sans-serif";
-    ctx.fillText("按生涯积分排名", RANK_CARD.x + RANK_CARD.w - 14, RANK_CARD.y + 26);
+    ctx.fillText("排行榜", RANK_CARD.x + 14, RANK_CARD.y + 28);
+    drawTab(TAB_FRIENDS, "好友", boardTab === "friends");
+    drawTab(TAB_GLOBAL, "全服", boardTab === "global");
+    const listY = RANK_CARD.y + 42;
+    const listH = RANK_CARD.h - 52;
+    if (boardTab === "friends") drawFriendBoard(listY, listH);
+    else drawGlobalBoard(listY, listH);
+  }
+  function drawTab(rect, label, active) {
+    chip(rect, label, active ? UI.primary : "rgba(255,246,228,0.12)", active ? UI.ink : UI.card, 10);
+  }
+  function drawFriendBoard(listY, listH) {
     ctx.textAlign = "center";
-    const listY = RANK_CARD.y + 38;
-    const listH = RANK_CARD.h - 48;
     if (!leaderboardAvailable()) {
       ctx.fillStyle = "rgba(255,246,228,0.38)";
       ctx.font = "600 11px sans-serif";
@@ -2850,7 +2965,67 @@ var HarborLoop = (() => {
       }
     }
   }
+  function drawGlobalBoard(listY, listH) {
+    const summary = app.result;
+    ctx.textAlign = "center";
+    if (!summary || !globalBoardAvailable()) {
+      ctx.fillStyle = "rgba(255,246,228,0.38)";
+      ctx.font = "600 11px sans-serif";
+      ctx.fillText("全服榜需要配置云开发环境", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2 - 8);
+      ctx.font = "600 9px sans-serif";
+      ctx.fillText("见 README 的云开发部署说明", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2 + 10);
+      return;
+    }
+    const board = globalBoard(summary.modeId, summary.difficulty);
+    if (board.state === "loading") {
+      ctx.fillStyle = "rgba(255,246,228,0.38)";
+      ctx.font = "600 11px sans-serif";
+      ctx.fillText("加载中…", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
+      return;
+    }
+    if (board.state === "failed" || board.rows.length === 0) {
+      ctx.fillStyle = "rgba(255,246,228,0.38)";
+      ctx.font = "600 11px sans-serif";
+      ctx.fillText(board.state === "failed" ? "加载失败" : "还没有人上榜，你可以是第一个", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
+      return;
+    }
+    const rowH = 22;
+    const visible = Math.min(board.rows.length, Math.floor((listH - 16) / rowH));
+    for (let i = 0; i < visible; i++) {
+      const row = board.rows[i];
+      const y = listY + i * rowH;
+      if (row.self) {
+        ctx.fillStyle = "rgba(87,213,203,0.16)";
+        ctx.fillRect(RANK_CARD.x + 8, y - 2, RANK_CARD.w - 16, rowH - 2);
+      }
+      ctx.textAlign = "left";
+      ctx.fillStyle = i < 3 ? UI.primary : "rgba(255,246,228,0.5)";
+      ctx.font = "900 11px monospace";
+      ctx.fillText(String(row.rank), RANK_CARD.x + 14, y + 12);
+      ctx.fillStyle = UI.card;
+      ctx.font = "600 11px sans-serif";
+      ctx.fillText(row.nickname.slice(0, 8), RANK_CARD.x + 40, y + 12);
+      ctx.textAlign = "right";
+      ctx.fillStyle = row.self ? UI.primary : "rgba(255,246,228,0.75)";
+      ctx.font = "900 11px monospace";
+      ctx.fillText(String(row.score), RANK_CARD.x + RANK_CARD.w - 14, y + 12);
+    }
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,246,228,0.5)";
+    ctx.font = "700 9px sans-serif";
+    const rankText = board.selfRank ? `你排第 ${board.selfRank} / ${board.total}` : `共 ${board.total} 人上榜`;
+    ctx.fillText(rankText, DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h - 10);
+  }
   function handleResultTap(x, y) {
+    layoutTabs();
+    if (hits(TAB_FRIENDS, x, y)) {
+      boardTab = "friends";
+      return true;
+    }
+    if (hits(TAB_GLOBAL, x, y)) {
+      boardTab = "global";
+      return true;
+    }
     if (hits(RETRY, x, y)) {
       retryRun();
       return true;
@@ -3228,14 +3403,14 @@ var HarborLoop = (() => {
   var layer = null;
   var layerCtx = null;
   var renderedTrack = null;
-  var unavailable = false;
+  var unavailable2 = false;
   function ensureLayer() {
-    if (unavailable) return false;
+    if (unavailable2) return false;
     if (layer && layerCtx) return true;
     layer = createOffscreenCanvas(Math.floor(VIEW_W * DPR), Math.floor(VIEW_H * DPR));
     layerCtx = layer ? layer.getContext("2d") : null;
     if (!layer || !layerCtx) {
-      unavailable = true;
+      unavailable2 = true;
       return false;
     }
     return true;

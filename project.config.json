@@ -33,6 +33,10 @@
       {
         "type": "file",
         "value": "tsconfig.json"
+      },
+      {
+        "type": "folder",
+        "value": "cloudfunctions"
       }
     ],
     "include": []
@@ -80,5 +84,6 @@
   "condition": {},
   "simulatorPluginLibVersion": {},
   "isGameTourist": false,
-  "editorSetting": {}
+  "editorSetting": {},
+  "cloudfunctionRoot": "cloudfunctions/"
 }

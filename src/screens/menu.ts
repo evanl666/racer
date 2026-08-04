@@ -1,6 +1,7 @@
 /** Mode select: progress header, difficulty pills, and one card per mode. */
 
 import { app, startDaily, startMode } from '../app';
+import { audio } from '../audio';
 import { dailyPlan } from '../daily';
 import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
 import { MODES, ORIGINAL_MODE_IDS } from '../modes';
@@ -16,9 +17,9 @@ import {
   starsFor,
   totalStars
 } from '../progress';
-import { drawLock, drawStar } from '../render/icons';
+import { drawLock, drawSpeaker, drawStar } from '../render/icons';
 import { chip, headline, hits, panel, screenBackground, type Rect } from '../render/ui';
-import { bestScore } from '../storage';
+import { bestScore, saveMuted } from '../storage';
 import { UI } from '../theme';
 
 const MARGIN = 14;
@@ -44,6 +45,8 @@ function pillRect(index: number): Rect {
 }
 
 const DAILY_RECT: Rect = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
+/** Sits in the header row, left of the star total. */
+const MUTE_RECT: Rect = { x: 0, y: 22, w: 32, h: 26 };
 
 function rowRect(index: number): Rect {
   return {
@@ -71,6 +74,12 @@ export function drawMenu(): void {
   ctx.fillStyle = UI.primary;
   ctx.font = '900 12px sans-serif';
   ctx.fillText(starText, starChip.x + 28, starChip.y + 17);
+
+  // Sound toggle. Mini games get played in public; muting has to be one tap.
+  MUTE_RECT.x = starChip.x - MUTE_RECT.w - 8;
+  panel(MUTE_RECT, { fill: UI.chip, radius: 10, lift: 2 });
+  drawSpeaker(MUTE_RECT.x + MUTE_RECT.w / 2, MUTE_RECT.y + MUTE_RECT.h / 2, 8,
+    audio.isMuted() ? 'rgba(255,246,228,0.4)' : UI.primary, !audio.isMuted());
 
   const next = nextUnlock();
   ctx.textAlign = 'left';
@@ -242,7 +251,14 @@ function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars:
 export function handleMenuTap(x: number, y: number): boolean {
   const stars = totalStars();
 
+  if (hits(MUTE_RECT, x, y)) {
+    setMuted(!audio.isMuted());
+    audio.playUiTap();
+    return true;
+  }
+
   if (hits(DAILY_RECT, x, y)) {
+    audio.playUiConfirm();
     startDaily();
     return true;
   }
@@ -251,8 +267,10 @@ export function handleMenuTap(x: number, y: number): boolean {
     if (!hits(pillRect(i), x, y)) continue;
     const difficulty = DIFFICULTIES[i];
     if (!difficultyUnlocked(difficulty, stars)) {
+      audio.playUiDenied();
       showToast(`需要 ${difficultyUnlockCost(difficulty)} 颗星解锁`);
     } else {
+      audio.playUiTap();
       app.difficulty = difficulty;
     }
     return true;
@@ -262,13 +280,20 @@ export function handleMenuTap(x: number, y: number): boolean {
     if (!hits(rowRect(i), x, y)) continue;
     const mode = MODES[i];
     if (!modeUnlocked(mode.id, stars)) {
+      audio.playUiDenied();
       showToast(`需要 ${modeUnlockCost(mode.id)} 颗星解锁`);
     } else {
+      audio.playUiConfirm();
       startMode(mode.id);
     }
     return true;
   }
   return false;
+}
+
+function setMuted(muted: boolean): void {
+  audio.setMuted(muted);
+  saveMuted(muted);
 }
 
 function showToast(text: string): void {

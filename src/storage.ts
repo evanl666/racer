@@ -92,6 +92,41 @@ export function submitScore(
   return true;
 }
 
+const MUTE_KEY = 'harbor-loop-muted-v1';
+
+export function loadMuted(): boolean {
+  try {
+    const anyWx = wx as unknown as { getStorageSync?(key: string): unknown };
+    if (typeof anyWx.getStorageSync === 'function') return anyWx.getStorageSync(MUTE_KEY) === '1';
+  } catch (error) {
+    /* fall through */
+  }
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage.getItem(MUTE_KEY) === '1';
+  } catch (error) {
+    /* unavailable */
+  }
+  return false;
+}
+
+export function saveMuted(muted: boolean): void {
+  const value = muted ? '1' : '0';
+  try {
+    const anyWx = wx as unknown as { setStorageSync?(key: string, data: unknown): void };
+    if (typeof anyWx.setStorageSync === 'function') {
+      anyWx.setStorageSync(MUTE_KEY, value);
+      return;
+    }
+  } catch (error) {
+    /* fall through */
+  }
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(MUTE_KEY, value);
+  } catch (error) {
+    /* preference stays in memory for this session */
+  }
+}
+
 /** Total of every personal best, used as the single number for the friend ranking. */
 export function careerPoints(): number {
   return Object.entries(table()).reduce((total, [entryKey, value]) => {

@@ -1,6 +1,7 @@
 /** Result screen: score card, friend ranking and the three actions. */
 
 import { app, canRevive, openMenu, retryRun, shareForRevive } from '../app';
+import { audio } from '../audio';
 import { DIFFICULTY_PROFILES } from '../difficulty';
 import {
   globalBoard,
@@ -262,23 +263,28 @@ function drawGlobalBoard(listY: number, listH: number): void {
 export function handleResultTap(x: number, y: number): boolean {
   layoutTabs();
   if (hits(TAB_FRIENDS, x, y)) {
+    audio.playUiTap();
     boardTab = 'friends';
     return true;
   }
   if (hits(TAB_GLOBAL, x, y)) {
+    audio.playUiTap();
     boardTab = 'global';
     return true;
   }
   if (hits(RETRY, x, y)) {
+    audio.playUiConfirm();
     // Same button, different promise depending on whether a revive is left.
     if (!shareForRevive()) retryRun();
     return true;
   }
   if (hits(MENU, x, y)) {
+    audio.playUiTap();
     openMenu();
     return true;
   }
   if (hits(SHARE, x, y)) {
+    audio.playUiConfirm();
     shareRun();
     return true;
   }

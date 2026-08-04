@@ -37,6 +37,7 @@ import { drawResult, enterResultScreen } from './screens/result';
 import { detectCollisions, detectOvertakes } from './scoring';
 import { installShareMenu } from './share';
 import { aiCars, engineSnapshot, inputState, player } from './state';
+import { loadMuted } from './storage';
 
 function stepRace(dt: number): void {
   updateControlFlash(dt);
@@ -114,6 +115,7 @@ function frame(nowValue?: number): void {
   scheduleFrame(frame);
 }
 
+audio.setMuted(loadMuted());
 installInput();
 installShareMenu();
 
@@ -142,6 +144,8 @@ export { feelState } from './feel';
 export { activeParticles } from './render/particles';
 export { dailyPlan, dailyStage, todayKey } from './daily';
 export { renderShareCard } from './shareCard';
+export { audio } from './audio';
+export { loadMuted, saveMuted } from './storage';
 export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';

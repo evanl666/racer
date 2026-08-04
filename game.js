@@ -44,6 +44,7 @@ var HarborLoop = (() => {
     activeParticles: () => activeParticles,
     aiCars: () => aiCars,
     app: () => app,
+    audio: () => audio,
     bestScore: () => bestScore,
     canRevive: () => canRevive,
     careerPoints: () => careerPoints,
@@ -56,6 +57,7 @@ var HarborLoop = (() => {
     inputState: () => inputState,
     isSeeded: () => isSeeded,
     laneButtonFlash: () => laneButtonFlash,
+    loadMuted: () => loadMuted,
     modeUnlockCost: () => modeUnlockCost,
     modeUnlocked: () => modeUnlocked,
     openMenu: () => openMenu,
@@ -64,6 +66,7 @@ var HarborLoop = (() => {
     renderShareCard: () => renderShareCard,
     retryRun: () => retryRun,
     run: () => run,
+    saveMuted: () => saveMuted,
     setSeed: () => setSeed,
     setUnlockOverride: () => setUnlockOverride,
     shareForRevive: () => shareForRevive,
@@ -710,6 +713,476 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/mathUtil.ts
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+  function moveToward(value, target, maxDelta) {
+    if (value < target) return Math.min(target, value + maxDelta);
+    if (value > target) return Math.max(target, value - maxDelta);
+    return target;
+  }
+
+  // src/platform.ts
+  var canvas = wx.createCanvas();
+  var context2d = canvas.getContext("2d");
+  if (!context2d) throw new Error("2D canvas context is unavailable");
+  var ctx = context2d;
+  function withRenderTarget(target, draw) {
+    const previous = ctx;
+    ctx = target;
+    try {
+      draw();
+    } finally {
+      ctx = previous;
+    }
+  }
+  function createOffscreenCanvas(width, height) {
+    try {
+      const offscreen = wx.createCanvas();
+      offscreen.width = width;
+      offscreen.height = height;
+      return offscreen;
+    } catch (error) {
+      return null;
+    }
+  }
+  var windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  var VIEW_W = windowInfo.windowWidth;
+  var VIEW_H = windowInfo.windowHeight;
+  var DPR = Math.min(windowInfo.pixelRatio || 1, 3);
+  canvas.width = Math.floor(VIEW_W * DPR);
+  canvas.height = Math.floor(VIEW_H * DPR);
+  ctx.scale(DPR, DPR);
+  var DESIGN_W = 390;
+  var DESIGN_H = 844;
+  var scale = Math.min(VIEW_W / DESIGN_W, VIEW_H / DESIGN_H);
+  var offsetX = (VIEW_W - DESIGN_W * scale) * 0.5;
+  var offsetY = (VIEW_H - DESIGN_H * scale) * 0.5;
+  function screenToDesignX(screenX) {
+    return (screenX - offsetX) / scale;
+  }
+  function screenToDesignY(screenY) {
+    return (screenY - offsetY) / scale;
+  }
+  function vibrate(type) {
+    if (typeof wx.vibrateShort !== "function") return;
+    try {
+      wx.vibrateShort({ type });
+    } catch (error) {
+    }
+  }
+  function createCompatibleAudioContext() {
+    if (typeof wx !== "undefined" && typeof wx.createWebAudioContext === "function") {
+      try {
+        return wx.createWebAudioContext();
+      } catch (error) {
+      }
+    }
+    if (typeof globalThis !== "undefined") {
+      const scope = globalThis;
+      const BrowserAudioContext = scope.AudioContext || scope.webkitAudioContext;
+      if (BrowserAudioContext) {
+        try {
+          return new BrowserAudioContext();
+        } catch (error) {
+        }
+      }
+    }
+    return null;
+  }
+  var scheduleFrame = typeof requestAnimationFrame === "function" ? (callback) => {
+    requestAnimationFrame(callback);
+  } : (callback) => {
+    setTimeout(() => callback(Date.now()), 16);
+  };
+
+  // src/audio.ts
+  function setAudioParam(param, value) {
+    if (!param) return;
+    try {
+      param.value = value;
+    } catch (error) {
+    }
+  }
+  function safelyStartNode(node) {
+    if (!node || typeof node.start !== "function") return;
+    try {
+      node.start(0);
+    } catch (error) {
+    }
+  }
+  function safelyStopNode(node) {
+    if (!node) return;
+    if (typeof node.stop === "function") {
+      try {
+        node.stop(0);
+      } catch (error) {
+      }
+    }
+    if (typeof node.disconnect === "function") {
+      try {
+        node.disconnect();
+      } catch (error) {
+      }
+    }
+  }
+  function createLoopingNoiseSource(context3) {
+    if (!context3 || typeof context3.createBuffer !== "function" || typeof context3.createBufferSource !== "function") return null;
+    try {
+      const sampleRate = context3.sampleRate || 44100;
+      const frameCount = Math.max(1, Math.floor(sampleRate * 1.25));
+      const buffer = context3.createBuffer(1, frameCount, sampleRate);
+      const data = buffer.getChannelData(0);
+      let previous = 0;
+      for (let index = 0; index < frameCount; index++) {
+        const white = Math.random() * 2 - 1;
+        previous = previous * 0.965 + white * 0.035;
+        data[index] = previous * 2.4;
+      }
+      const source = context3.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      return source;
+    } catch (error) {
+      return null;
+    }
+  }
+  var TIER_RPM_MULTIPLIER = [1, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 1.415, 1.445, 1.47];
+  var MAX_VOICES = 12;
+  var MASTER_VOLUME = 0.46;
+  var AudioEngine = class {
+    constructor() {
+      this.context = null;
+      this.started = false;
+      this.disabled = false;
+      this.masterGain = null;
+      this.engineGain = null;
+      this.engineFilter = null;
+      this.engineLow = null;
+      this.engineMid = null;
+      this.engineHigh = null;
+      this.engineMidGain = null;
+      this.engineHighGain = null;
+      this.engineNoise = null;
+      this.engineNoiseFilter = null;
+      this.engineNoiseGain = null;
+      this.muted = false;
+      this.smoothEngineFrequency = 48;
+      this.smoothEngineVolume = 0;
+      this.smoothThrottle = 0;
+      this.enginePulsePhase = 0;
+      this.effectDuck = 0;
+      this.voices = [];
+      /** One-shot nodes that decay on their own schedule (the crash noise burst). */
+      this.transients = [];
+    }
+    ensureStarted() {
+      if (this.disabled) return false;
+      if (!this.context) {
+        this.context = createCompatibleAudioContext();
+        if (!this.context) {
+          this.disabled = true;
+          return false;
+        }
+      }
+      if (this.context.state === "suspended" && typeof this.context.resume === "function") {
+        try {
+          const resumeResult = this.context.resume();
+          if (resumeResult && typeof resumeResult.catch === "function") resumeResult.catch(() => {
+          });
+        } catch (error) {
+        }
+      }
+      if (!this.started) {
+        try {
+          const context3 = this.context;
+          this.masterGain = context3.createGain();
+          this.engineGain = context3.createGain();
+          this.engineMidGain = context3.createGain();
+          this.engineHighGain = context3.createGain();
+          this.engineNoiseGain = context3.createGain();
+          this.engineFilter = context3.createBiquadFilter();
+          this.engineNoiseFilter = context3.createBiquadFilter();
+          this.engineLow = context3.createOscillator();
+          this.engineMid = context3.createOscillator();
+          this.engineHigh = context3.createOscillator();
+          this.engineNoise = createLoopingNoiseSource(context3);
+          setAudioParam(this.masterGain.gain, this.muted ? 0 : MASTER_VOLUME);
+          setAudioParam(this.engineGain.gain, 1e-4);
+          setAudioParam(this.engineMidGain.gain, 0.07);
+          setAudioParam(this.engineHighGain.gain, 0.018);
+          setAudioParam(this.engineNoiseGain.gain, 1e-4);
+          try {
+            this.engineFilter.type = "lowpass";
+          } catch (error) {
+          }
+          setAudioParam(this.engineFilter.frequency, 520);
+          setAudioParam(this.engineFilter.Q, 0.72);
+          try {
+            this.engineNoiseFilter.type = "bandpass";
+          } catch (error) {
+          }
+          setAudioParam(this.engineNoiseFilter.frequency, 720);
+          setAudioParam(this.engineNoiseFilter.Q, 0.85);
+          try {
+            this.engineLow.type = "triangle";
+          } catch (error) {
+          }
+          try {
+            this.engineMid.type = "sawtooth";
+          } catch (error) {
+          }
+          try {
+            this.engineHigh.type = "triangle";
+          } catch (error) {
+          }
+          setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency);
+          setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * 2.02);
+          setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * 4.07);
+          this.engineLow.connect(this.engineFilter);
+          this.engineMid.connect(this.engineMidGain);
+          this.engineMidGain.connect(this.engineFilter);
+          this.engineHigh.connect(this.engineHighGain);
+          this.engineHighGain.connect(this.engineFilter);
+          if (this.engineNoise) {
+            this.engineNoise.connect(this.engineNoiseFilter);
+            this.engineNoiseFilter.connect(this.engineNoiseGain);
+            this.engineNoiseGain.connect(this.engineGain);
+          }
+          this.engineFilter.connect(this.engineGain);
+          this.engineGain.connect(this.masterGain);
+          this.masterGain.connect(context3.destination);
+          safelyStartNode(this.engineLow);
+          safelyStartNode(this.engineMid);
+          safelyStartNode(this.engineHigh);
+          safelyStartNode(this.engineNoise);
+          this.started = true;
+        } catch (error) {
+          this.disabled = true;
+          this.started = false;
+          return false;
+        }
+      }
+      return true;
+    }
+    addTone(type, duration, startFrequency, endFrequency, volume) {
+      if (!this.ensureStarted()) return;
+      const context3 = this.context;
+      const masterGain = this.masterGain;
+      if (!context3 || !masterGain) return;
+      try {
+        const oscillator = context3.createOscillator();
+        const gain = context3.createGain();
+        try {
+          oscillator.type = type;
+        } catch (error) {
+        }
+        setAudioParam(oscillator.frequency, startFrequency);
+        setAudioParam(gain.gain, 1e-4);
+        oscillator.connect(gain);
+        gain.connect(masterGain);
+        safelyStartNode(oscillator);
+        while (this.voices.length >= MAX_VOICES) {
+          const oldest = this.voices.shift();
+          safelyStopNode(oldest == null ? void 0 : oldest.oscillator);
+          safelyStopNode(oldest == null ? void 0 : oldest.gain);
+        }
+        this.voices.push({
+          oscillator,
+          gain,
+          elapsed: 0,
+          duration,
+          startFrequency,
+          endFrequency,
+          volume
+        });
+      } catch (error) {
+      }
+    }
+    /** Silence without tearing anything down, so unmuting is instant. */
+    setMuted(muted) {
+      var _a;
+      this.muted = muted;
+      setAudioParam((_a = this.masterGain) == null ? void 0 : _a.gain, muted ? 0 : MASTER_VOLUME);
+    }
+    isMuted() {
+      return this.muted;
+    }
+    /** UI tap. Deliberately dry and short: menus should click, not sing. */
+    playUiTap() {
+      this.addTone("triangle", 0.045, 660, 520, 0.05);
+    }
+    /** Confirmation, one step up from a tap: starting a run, choosing a mode. */
+    playUiConfirm() {
+      this.addTone("triangle", 0.07, 520, 780, 0.055);
+      this.addTone("sine", 0.09, 780, 1040, 0.022);
+    }
+    /** Refusal: a flat, slightly sour pair that reads as "no" without being harsh. */
+    playUiDenied() {
+      this.addTone("sawtooth", 0.09, 220, 180, 0.038);
+      this.addTone("triangle", 0.07, 175, 150, 0.022);
+    }
+    /** Stage or objective cleared: a rising major triad. */
+    playFanfare() {
+      this.effectDuck = Math.max(this.effectDuck, 0.4);
+      const root = 392;
+      this.addTone("triangle", 0.13, root, root, 0.06);
+      this.addTone("triangle", 0.15, root * 1.26, root * 1.26, 0.055);
+      this.addTone("triangle", 0.22, root * 1.5, root * 1.5, 0.05);
+      this.addTone("sine", 0.3, root * 3, root * 3, 0.016);
+    }
+    /** Revive: a low swell up into the engine coming back. */
+    playRevive() {
+      this.effectDuck = Math.max(this.effectDuck, 0.5);
+      this.addTone("sawtooth", 0.34, 90, 300, 0.07);
+      this.addTone("sine", 0.4, 300, 660, 0.03);
+    }
+    playLaneChange(direction) {
+      const directionLift = direction > 0 ? 16 : -16;
+      this.effectDuck = Math.max(this.effectDuck, 0.22);
+      this.addTone("triangle", 0.065, 330 + directionLift, 205 + directionLift, 0.04);
+      this.addTone("sine", 0.045, 510 + directionLift, 350 + directionLift, 0.01);
+    }
+    playOvertake(combo, count = 1) {
+      const withinBlock = Math.max(0, combo - 1) % 10;
+      const notePattern = [0, 2, 3, 5, 7, 8, 10, 12, 10, 12];
+      const tier = Math.min(7, Math.floor(Math.max(0, combo - 1) / 10));
+      const semitones = notePattern[withinBlock] + tier * 0.34;
+      const baseFrequency = Math.min(760, 305 * Math.pow(2, semitones / 12));
+      const volume = Math.min(0.064, 0.046 + Math.max(0, count - 1) * 6e-3);
+      this.effectDuck = Math.max(this.effectDuck, 0.25);
+      this.addTone("triangle", 0.07, baseFrequency * 0.95, baseFrequency, volume);
+      this.addTone("sine", 0.046, baseFrequency * 1.45, baseFrequency * 1.49, volume * 0.12);
+    }
+    /**
+     * Crash. A filtered noise burst plus a low body thud: the noise carries the
+     * scrape, the sine carries the mass. Crashes used to be silent, which cost
+     * most of the perceived impact.
+     */
+    playCrash() {
+      if (!this.ensureStarted()) return;
+      const context3 = this.context;
+      const masterGain = this.masterGain;
+      if (!context3 || !masterGain) return;
+      this.effectDuck = Math.max(this.effectDuck, 0.85);
+      try {
+        const noise = createLoopingNoiseSource(context3);
+        if (noise) {
+          const filter = context3.createBiquadFilter();
+          const gain = context3.createGain();
+          try {
+            filter.type = "bandpass";
+          } catch (error) {
+          }
+          setAudioParam(filter.frequency, 1500);
+          setAudioParam(filter.Q, 0.7);
+          setAudioParam(gain.gain, 0.3);
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(masterGain);
+          safelyStartNode(noise);
+          this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.3 });
+        }
+      } catch (error) {
+      }
+      this.addTone("triangle", 0.3, 116, 44, 0.34);
+      this.addTone("sawtooth", 0.16, 220, 70, 0.12);
+    }
+    /** Close call: a short upward whoosh, distinct from the overtake blip. */
+    playCloseCall() {
+      this.effectDuck = Math.max(this.effectDuck, 0.3);
+      this.addTone("sine", 0.2, 520, 1500, 0.052);
+      this.addTone("triangle", 0.13, 260, 700, 0.028);
+    }
+    playSpeedTierUp(tier) {
+      const start = Math.min(250, 118 + tier * 9);
+      const end = Math.min(390, start * 1.42);
+      this.effectDuck = Math.max(this.effectDuck, 0.18);
+      this.addTone("sawtooth", 0.145, start, end, 0.036);
+      this.addTone("triangle", 0.11, start * 1.95, end * 1.74, 0.018);
+    }
+    update(dt, snapshot) {
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+      if (!this.started || this.disabled) return;
+      const tierMultiplier = TIER_RPM_MULTIPLIER[snapshot.tier];
+      const throttleTarget = snapshot.throttle && snapshot.state !== "CRASHED" ? 1 : 0;
+      const throttleResponse = throttleTarget > this.smoothThrottle ? 8 : 4.6;
+      this.smoothThrottle += (throttleTarget - this.smoothThrottle) * (1 - Math.exp(-dt * throttleResponse));
+      const speedInsideBand = clamp(
+        (snapshot.speed - snapshot.cruiseSpeed) / Math.max(1, snapshot.throttleMaxSpeed - snapshot.cruiseSpeed),
+        0,
+        1
+      );
+      const revAmount = clamp(this.smoothThrottle * 0.74 + speedInsideBand * 0.26, 0, 1);
+      let targetFrequency = 48 * tierMultiplier * (1 + revAmount * 0.26);
+      if (snapshot.state === "CRASHED") targetFrequency = 36;
+      if (snapshot.state === "RECOVERING") targetFrequency *= 0.82;
+      const engineResponse = 1 - Math.exp(-dt * 6.6);
+      this.smoothEngineFrequency += (targetFrequency - this.smoothEngineFrequency) * engineResponse;
+      const speedRatio = clamp(snapshot.speed / snapshot.maxSpeed, 0, 1);
+      let targetVolume = 0.016 + snapshot.tier * 1e-3 + revAmount * 0.01 + speedRatio * 0.012;
+      if (snapshot.state === "CRASHED") targetVolume = 35e-4;
+      if (snapshot.state === "RECOVERING") targetVolume *= 0.72;
+      this.smoothEngineVolume += (targetVolume - this.smoothEngineVolume) * (1 - Math.exp(-dt * 8));
+      const pulseRate = 7.2 + snapshot.tier * 0.72 + revAmount * 6.4;
+      this.enginePulsePhase = (this.enginePulsePhase + dt * pulseRate) % 1;
+      const pulseWave = Math.max(0, Math.sin(this.enginePulsePhase * Math.PI * 2));
+      const pulse = 0.82 + Math.pow(pulseWave, 3.2) * 0.18;
+      this.effectDuck = Math.max(0, this.effectDuck - dt * 3.6);
+      const duck = 1 - this.effectDuck * 0.28;
+      setAudioParam((_a = this.engineLow) == null ? void 0 : _a.frequency, this.smoothEngineFrequency);
+      setAudioParam((_b = this.engineMid) == null ? void 0 : _b.frequency, this.smoothEngineFrequency * (2.01 + revAmount * 0.035));
+      setAudioParam((_c = this.engineHigh) == null ? void 0 : _c.frequency, this.smoothEngineFrequency * (4.03 + revAmount * 0.11));
+      setAudioParam((_d = this.engineMidGain) == null ? void 0 : _d.gain, 0.052 + revAmount * 0.035 + speedRatio * 0.01);
+      setAudioParam((_e = this.engineHighGain) == null ? void 0 : _e.gain, 0.012 + revAmount * 0.018);
+      setAudioParam((_f = this.engineGain) == null ? void 0 : _f.gain, this.smoothEngineVolume * pulse * duck);
+      setAudioParam((_g = this.engineFilter) == null ? void 0 : _g.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
+      setAudioParam((_h = this.engineNoiseFilter) == null ? void 0 : _h.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
+      setAudioParam((_i = this.engineNoiseGain) == null ? void 0 : _i.gain, (3e-3 + revAmount * 0.01 + speedRatio * 9e-3) * duck);
+      for (let index = this.transients.length - 1; index >= 0; index--) {
+        const transient = this.transients[index];
+        transient.elapsed += dt;
+        const t = clamp(transient.elapsed / transient.duration, 0, 1);
+        setAudioParam(transient.gain.gain, Math.max(1e-4, transient.volume * Math.pow(1 - t, 2.2)));
+        if (t >= 1) {
+          for (const node of transient.nodes) safelyStopNode(node);
+          this.transients.splice(index, 1);
+        }
+      }
+      for (let index = this.voices.length - 1; index >= 0; index--) {
+        const voice = this.voices[index];
+        voice.elapsed += dt;
+        const t = clamp(voice.elapsed / voice.duration, 0, 1);
+        const attack = Math.min(1, t / 0.1);
+        const decay = Math.pow(1 - t, 1.7);
+        const envelope = attack * decay;
+        const frequency = voice.startFrequency + (voice.endFrequency - voice.startFrequency) * t;
+        setAudioParam(voice.oscillator.frequency, frequency);
+        setAudioParam(voice.gain.gain, Math.max(1e-4, voice.volume * envelope));
+        if (t >= 1) {
+          safelyStopNode(voice.oscillator);
+          safelyStopNode(voice.gain);
+          this.voices.splice(index, 1);
+        }
+      }
+    }
+    suspend() {
+      if (!this.context || typeof this.context.suspend !== "function") return;
+      try {
+        const result = this.context.suspend();
+        if (result && typeof result.catch === "function") result.catch(() => {
+        });
+      } catch (error) {
+      }
+    }
+    resume() {
+      if (!this.started) return;
+      this.ensureStarted();
+    }
+  };
+  var audio = new AudioEngine();
+
   // src/effects.ts
   var effects = {
     /** 0 = clear, 1 = fully blacked out. */
@@ -916,436 +1389,6 @@ var HarborLoop = (() => {
       run2.bannerTimer = 1;
     }
   };
-
-  // src/mathUtil.ts
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-  function moveToward(value, target, maxDelta) {
-    if (value < target) return Math.min(target, value + maxDelta);
-    if (value > target) return Math.max(target, value - maxDelta);
-    return target;
-  }
-
-  // src/platform.ts
-  var canvas = wx.createCanvas();
-  var context2d = canvas.getContext("2d");
-  if (!context2d) throw new Error("2D canvas context is unavailable");
-  var ctx = context2d;
-  function withRenderTarget(target, draw) {
-    const previous = ctx;
-    ctx = target;
-    try {
-      draw();
-    } finally {
-      ctx = previous;
-    }
-  }
-  function createOffscreenCanvas(width, height) {
-    try {
-      const offscreen = wx.createCanvas();
-      offscreen.width = width;
-      offscreen.height = height;
-      return offscreen;
-    } catch (error) {
-      return null;
-    }
-  }
-  var windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
-  var VIEW_W = windowInfo.windowWidth;
-  var VIEW_H = windowInfo.windowHeight;
-  var DPR = Math.min(windowInfo.pixelRatio || 1, 3);
-  canvas.width = Math.floor(VIEW_W * DPR);
-  canvas.height = Math.floor(VIEW_H * DPR);
-  ctx.scale(DPR, DPR);
-  var DESIGN_W = 390;
-  var DESIGN_H = 844;
-  var scale = Math.min(VIEW_W / DESIGN_W, VIEW_H / DESIGN_H);
-  var offsetX = (VIEW_W - DESIGN_W * scale) * 0.5;
-  var offsetY = (VIEW_H - DESIGN_H * scale) * 0.5;
-  function screenToDesignX(screenX) {
-    return (screenX - offsetX) / scale;
-  }
-  function screenToDesignY(screenY) {
-    return (screenY - offsetY) / scale;
-  }
-  function vibrate(type) {
-    if (typeof wx.vibrateShort !== "function") return;
-    try {
-      wx.vibrateShort({ type });
-    } catch (error) {
-    }
-  }
-  function createCompatibleAudioContext() {
-    if (typeof wx !== "undefined" && typeof wx.createWebAudioContext === "function") {
-      try {
-        return wx.createWebAudioContext();
-      } catch (error) {
-      }
-    }
-    if (typeof globalThis !== "undefined") {
-      const scope = globalThis;
-      const BrowserAudioContext = scope.AudioContext || scope.webkitAudioContext;
-      if (BrowserAudioContext) {
-        try {
-          return new BrowserAudioContext();
-        } catch (error) {
-        }
-      }
-    }
-    return null;
-  }
-  var scheduleFrame = typeof requestAnimationFrame === "function" ? (callback) => {
-    requestAnimationFrame(callback);
-  } : (callback) => {
-    setTimeout(() => callback(Date.now()), 16);
-  };
-
-  // src/audio.ts
-  function setAudioParam(param, value) {
-    if (!param) return;
-    try {
-      param.value = value;
-    } catch (error) {
-    }
-  }
-  function safelyStartNode(node) {
-    if (!node || typeof node.start !== "function") return;
-    try {
-      node.start(0);
-    } catch (error) {
-    }
-  }
-  function safelyStopNode(node) {
-    if (!node) return;
-    if (typeof node.stop === "function") {
-      try {
-        node.stop(0);
-      } catch (error) {
-      }
-    }
-    if (typeof node.disconnect === "function") {
-      try {
-        node.disconnect();
-      } catch (error) {
-      }
-    }
-  }
-  function createLoopingNoiseSource(context3) {
-    if (!context3 || typeof context3.createBuffer !== "function" || typeof context3.createBufferSource !== "function") return null;
-    try {
-      const sampleRate = context3.sampleRate || 44100;
-      const frameCount = Math.max(1, Math.floor(sampleRate * 1.25));
-      const buffer = context3.createBuffer(1, frameCount, sampleRate);
-      const data = buffer.getChannelData(0);
-      let previous = 0;
-      for (let index = 0; index < frameCount; index++) {
-        const white = Math.random() * 2 - 1;
-        previous = previous * 0.965 + white * 0.035;
-        data[index] = previous * 2.4;
-      }
-      const source = context3.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-      return source;
-    } catch (error) {
-      return null;
-    }
-  }
-  var TIER_RPM_MULTIPLIER = [1, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 1.415, 1.445, 1.47];
-  var MAX_VOICES = 12;
-  var AudioEngine = class {
-    constructor() {
-      this.context = null;
-      this.started = false;
-      this.disabled = false;
-      this.masterGain = null;
-      this.engineGain = null;
-      this.engineFilter = null;
-      this.engineLow = null;
-      this.engineMid = null;
-      this.engineHigh = null;
-      this.engineMidGain = null;
-      this.engineHighGain = null;
-      this.engineNoise = null;
-      this.engineNoiseFilter = null;
-      this.engineNoiseGain = null;
-      this.smoothEngineFrequency = 48;
-      this.smoothEngineVolume = 0;
-      this.smoothThrottle = 0;
-      this.enginePulsePhase = 0;
-      this.effectDuck = 0;
-      this.voices = [];
-      /** One-shot nodes that decay on their own schedule (the crash noise burst). */
-      this.transients = [];
-    }
-    ensureStarted() {
-      if (this.disabled) return false;
-      if (!this.context) {
-        this.context = createCompatibleAudioContext();
-        if (!this.context) {
-          this.disabled = true;
-          return false;
-        }
-      }
-      if (this.context.state === "suspended" && typeof this.context.resume === "function") {
-        try {
-          const resumeResult = this.context.resume();
-          if (resumeResult && typeof resumeResult.catch === "function") resumeResult.catch(() => {
-          });
-        } catch (error) {
-        }
-      }
-      if (!this.started) {
-        try {
-          const context3 = this.context;
-          this.masterGain = context3.createGain();
-          this.engineGain = context3.createGain();
-          this.engineMidGain = context3.createGain();
-          this.engineHighGain = context3.createGain();
-          this.engineNoiseGain = context3.createGain();
-          this.engineFilter = context3.createBiquadFilter();
-          this.engineNoiseFilter = context3.createBiquadFilter();
-          this.engineLow = context3.createOscillator();
-          this.engineMid = context3.createOscillator();
-          this.engineHigh = context3.createOscillator();
-          this.engineNoise = createLoopingNoiseSource(context3);
-          setAudioParam(this.masterGain.gain, 0.46);
-          setAudioParam(this.engineGain.gain, 1e-4);
-          setAudioParam(this.engineMidGain.gain, 0.07);
-          setAudioParam(this.engineHighGain.gain, 0.018);
-          setAudioParam(this.engineNoiseGain.gain, 1e-4);
-          try {
-            this.engineFilter.type = "lowpass";
-          } catch (error) {
-          }
-          setAudioParam(this.engineFilter.frequency, 520);
-          setAudioParam(this.engineFilter.Q, 0.72);
-          try {
-            this.engineNoiseFilter.type = "bandpass";
-          } catch (error) {
-          }
-          setAudioParam(this.engineNoiseFilter.frequency, 720);
-          setAudioParam(this.engineNoiseFilter.Q, 0.85);
-          try {
-            this.engineLow.type = "triangle";
-          } catch (error) {
-          }
-          try {
-            this.engineMid.type = "sawtooth";
-          } catch (error) {
-          }
-          try {
-            this.engineHigh.type = "triangle";
-          } catch (error) {
-          }
-          setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency);
-          setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * 2.02);
-          setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * 4.07);
-          this.engineLow.connect(this.engineFilter);
-          this.engineMid.connect(this.engineMidGain);
-          this.engineMidGain.connect(this.engineFilter);
-          this.engineHigh.connect(this.engineHighGain);
-          this.engineHighGain.connect(this.engineFilter);
-          if (this.engineNoise) {
-            this.engineNoise.connect(this.engineNoiseFilter);
-            this.engineNoiseFilter.connect(this.engineNoiseGain);
-            this.engineNoiseGain.connect(this.engineGain);
-          }
-          this.engineFilter.connect(this.engineGain);
-          this.engineGain.connect(this.masterGain);
-          this.masterGain.connect(context3.destination);
-          safelyStartNode(this.engineLow);
-          safelyStartNode(this.engineMid);
-          safelyStartNode(this.engineHigh);
-          safelyStartNode(this.engineNoise);
-          this.started = true;
-        } catch (error) {
-          this.disabled = true;
-          this.started = false;
-          return false;
-        }
-      }
-      return true;
-    }
-    addTone(type, duration, startFrequency, endFrequency, volume) {
-      if (!this.ensureStarted()) return;
-      const context3 = this.context;
-      const masterGain = this.masterGain;
-      if (!context3 || !masterGain) return;
-      try {
-        const oscillator = context3.createOscillator();
-        const gain = context3.createGain();
-        try {
-          oscillator.type = type;
-        } catch (error) {
-        }
-        setAudioParam(oscillator.frequency, startFrequency);
-        setAudioParam(gain.gain, 1e-4);
-        oscillator.connect(gain);
-        gain.connect(masterGain);
-        safelyStartNode(oscillator);
-        while (this.voices.length >= MAX_VOICES) {
-          const oldest = this.voices.shift();
-          safelyStopNode(oldest == null ? void 0 : oldest.oscillator);
-          safelyStopNode(oldest == null ? void 0 : oldest.gain);
-        }
-        this.voices.push({
-          oscillator,
-          gain,
-          elapsed: 0,
-          duration,
-          startFrequency,
-          endFrequency,
-          volume
-        });
-      } catch (error) {
-      }
-    }
-    playLaneChange(direction) {
-      const directionLift = direction > 0 ? 16 : -16;
-      this.effectDuck = Math.max(this.effectDuck, 0.22);
-      this.addTone("triangle", 0.065, 330 + directionLift, 205 + directionLift, 0.04);
-      this.addTone("sine", 0.045, 510 + directionLift, 350 + directionLift, 0.01);
-    }
-    playOvertake(combo, count = 1) {
-      const withinBlock = Math.max(0, combo - 1) % 10;
-      const notePattern = [0, 2, 3, 5, 7, 8, 10, 12, 10, 12];
-      const tier = Math.min(7, Math.floor(Math.max(0, combo - 1) / 10));
-      const semitones = notePattern[withinBlock] + tier * 0.34;
-      const baseFrequency = Math.min(760, 305 * Math.pow(2, semitones / 12));
-      const volume = Math.min(0.064, 0.046 + Math.max(0, count - 1) * 6e-3);
-      this.effectDuck = Math.max(this.effectDuck, 0.25);
-      this.addTone("triangle", 0.07, baseFrequency * 0.95, baseFrequency, volume);
-      this.addTone("sine", 0.046, baseFrequency * 1.45, baseFrequency * 1.49, volume * 0.12);
-    }
-    /**
-     * Crash. A filtered noise burst plus a low body thud: the noise carries the
-     * scrape, the sine carries the mass. Crashes used to be silent, which cost
-     * most of the perceived impact.
-     */
-    playCrash() {
-      if (!this.ensureStarted()) return;
-      const context3 = this.context;
-      const masterGain = this.masterGain;
-      if (!context3 || !masterGain) return;
-      this.effectDuck = Math.max(this.effectDuck, 0.85);
-      try {
-        const noise = createLoopingNoiseSource(context3);
-        if (noise) {
-          const filter = context3.createBiquadFilter();
-          const gain = context3.createGain();
-          try {
-            filter.type = "bandpass";
-          } catch (error) {
-          }
-          setAudioParam(filter.frequency, 1500);
-          setAudioParam(filter.Q, 0.7);
-          setAudioParam(gain.gain, 0.3);
-          noise.connect(filter);
-          filter.connect(gain);
-          gain.connect(masterGain);
-          safelyStartNode(noise);
-          this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.3 });
-        }
-      } catch (error) {
-      }
-      this.addTone("triangle", 0.3, 116, 44, 0.34);
-      this.addTone("sawtooth", 0.16, 220, 70, 0.12);
-    }
-    /** Close call: a short upward whoosh, distinct from the overtake blip. */
-    playCloseCall() {
-      this.effectDuck = Math.max(this.effectDuck, 0.3);
-      this.addTone("sine", 0.2, 520, 1500, 0.052);
-      this.addTone("triangle", 0.13, 260, 700, 0.028);
-    }
-    playSpeedTierUp(tier) {
-      const start = Math.min(250, 118 + tier * 9);
-      const end = Math.min(390, start * 1.42);
-      this.effectDuck = Math.max(this.effectDuck, 0.18);
-      this.addTone("sawtooth", 0.145, start, end, 0.036);
-      this.addTone("triangle", 0.11, start * 1.95, end * 1.74, 0.018);
-    }
-    update(dt, snapshot) {
-      var _a, _b, _c, _d, _e, _f, _g, _h, _i;
-      if (!this.started || this.disabled) return;
-      const tierMultiplier = TIER_RPM_MULTIPLIER[snapshot.tier];
-      const throttleTarget = snapshot.throttle && snapshot.state !== "CRASHED" ? 1 : 0;
-      const throttleResponse = throttleTarget > this.smoothThrottle ? 8 : 4.6;
-      this.smoothThrottle += (throttleTarget - this.smoothThrottle) * (1 - Math.exp(-dt * throttleResponse));
-      const speedInsideBand = clamp(
-        (snapshot.speed - snapshot.cruiseSpeed) / Math.max(1, snapshot.throttleMaxSpeed - snapshot.cruiseSpeed),
-        0,
-        1
-      );
-      const revAmount = clamp(this.smoothThrottle * 0.74 + speedInsideBand * 0.26, 0, 1);
-      let targetFrequency = 48 * tierMultiplier * (1 + revAmount * 0.26);
-      if (snapshot.state === "CRASHED") targetFrequency = 36;
-      if (snapshot.state === "RECOVERING") targetFrequency *= 0.82;
-      const engineResponse = 1 - Math.exp(-dt * 6.6);
-      this.smoothEngineFrequency += (targetFrequency - this.smoothEngineFrequency) * engineResponse;
-      const speedRatio = clamp(snapshot.speed / snapshot.maxSpeed, 0, 1);
-      let targetVolume = 0.016 + snapshot.tier * 1e-3 + revAmount * 0.01 + speedRatio * 0.012;
-      if (snapshot.state === "CRASHED") targetVolume = 35e-4;
-      if (snapshot.state === "RECOVERING") targetVolume *= 0.72;
-      this.smoothEngineVolume += (targetVolume - this.smoothEngineVolume) * (1 - Math.exp(-dt * 8));
-      const pulseRate = 7.2 + snapshot.tier * 0.72 + revAmount * 6.4;
-      this.enginePulsePhase = (this.enginePulsePhase + dt * pulseRate) % 1;
-      const pulseWave = Math.max(0, Math.sin(this.enginePulsePhase * Math.PI * 2));
-      const pulse = 0.82 + Math.pow(pulseWave, 3.2) * 0.18;
-      this.effectDuck = Math.max(0, this.effectDuck - dt * 3.6);
-      const duck = 1 - this.effectDuck * 0.28;
-      setAudioParam((_a = this.engineLow) == null ? void 0 : _a.frequency, this.smoothEngineFrequency);
-      setAudioParam((_b = this.engineMid) == null ? void 0 : _b.frequency, this.smoothEngineFrequency * (2.01 + revAmount * 0.035));
-      setAudioParam((_c = this.engineHigh) == null ? void 0 : _c.frequency, this.smoothEngineFrequency * (4.03 + revAmount * 0.11));
-      setAudioParam((_d = this.engineMidGain) == null ? void 0 : _d.gain, 0.052 + revAmount * 0.035 + speedRatio * 0.01);
-      setAudioParam((_e = this.engineHighGain) == null ? void 0 : _e.gain, 0.012 + revAmount * 0.018);
-      setAudioParam((_f = this.engineGain) == null ? void 0 : _f.gain, this.smoothEngineVolume * pulse * duck);
-      setAudioParam((_g = this.engineFilter) == null ? void 0 : _g.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
-      setAudioParam((_h = this.engineNoiseFilter) == null ? void 0 : _h.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
-      setAudioParam((_i = this.engineNoiseGain) == null ? void 0 : _i.gain, (3e-3 + revAmount * 0.01 + speedRatio * 9e-3) * duck);
-      for (let index = this.transients.length - 1; index >= 0; index--) {
-        const transient = this.transients[index];
-        transient.elapsed += dt;
-        const t = clamp(transient.elapsed / transient.duration, 0, 1);
-        setAudioParam(transient.gain.gain, Math.max(1e-4, transient.volume * Math.pow(1 - t, 2.2)));
-        if (t >= 1) {
-          for (const node of transient.nodes) safelyStopNode(node);
-          this.transients.splice(index, 1);
-        }
-      }
-      for (let index = this.voices.length - 1; index >= 0; index--) {
-        const voice = this.voices[index];
-        voice.elapsed += dt;
-        const t = clamp(voice.elapsed / voice.duration, 0, 1);
-        const attack = Math.min(1, t / 0.1);
-        const decay = Math.pow(1 - t, 1.7);
-        const envelope = attack * decay;
-        const frequency = voice.startFrequency + (voice.endFrequency - voice.startFrequency) * t;
-        setAudioParam(voice.oscillator.frequency, frequency);
-        setAudioParam(voice.gain.gain, Math.max(1e-4, voice.volume * envelope));
-        if (t >= 1) {
-          safelyStopNode(voice.oscillator);
-          safelyStopNode(voice.gain);
-          this.voices.splice(index, 1);
-        }
-      }
-    }
-    suspend() {
-      if (!this.context || typeof this.context.suspend !== "function") return;
-      try {
-        const result = this.context.suspend();
-        if (result && typeof result.catch === "function") result.catch(() => {
-        });
-      } catch (error) {
-      }
-    }
-    resume() {
-      if (!this.started) return;
-      this.ensureStarted();
-    }
-  };
-  var audio = new AudioEngine();
 
   // src/player.ts
   function laneInputStateAllows() {
@@ -1855,6 +1898,36 @@ var HarborLoop = (() => {
     ctx.fill();
     ctx.restore();
   }
+  function drawSpeaker(cx, cy, size, color, on) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.2, size * 0.16);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.6, cy - size * 0.28);
+    ctx.lineTo(cx - size * 0.2, cy - size * 0.28);
+    ctx.lineTo(cx + size * 0.18, cy - size * 0.62);
+    ctx.lineTo(cx + size * 0.18, cy + size * 0.62);
+    ctx.lineTo(cx - size * 0.2, cy + size * 0.28);
+    ctx.lineTo(cx - size * 0.6, cy + size * 0.28);
+    ctx.closePath();
+    ctx.fill();
+    if (on) {
+      ctx.beginPath();
+      ctx.arc(cx + size * 0.24, cy, size * 0.42, -0.9, 0.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + size * 0.24, cy, size * 0.72, -0.8, 0.8);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx + size * 0.32, cy - size * 0.42);
+      ctx.lineTo(cx + size * 0.86, cy + size * 0.42);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // src/theme.ts
   var COLORS = {
@@ -2253,6 +2326,34 @@ var HarborLoop = (() => {
     writeRaw(JSON.stringify(table()));
     return true;
   }
+  var MUTE_KEY = "harbor-loop-muted-v1";
+  function loadMuted() {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.getStorageSync === "function") return anyWx.getStorageSync(MUTE_KEY) === "1";
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(MUTE_KEY) === "1";
+    } catch (error) {
+    }
+    return false;
+  }
+  function saveMuted(muted) {
+    const value = muted ? "1" : "0";
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.setStorageSync === "function") {
+        anyWx.setStorageSync(MUTE_KEY, value);
+        return;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MUTE_KEY, value);
+    } catch (error) {
+    }
+  }
   function careerPoints() {
     return Object.entries(table()).reduce((total, [entryKey, value]) => {
       if (entryKey.startsWith("time-attack:")) return total;
@@ -2620,6 +2721,7 @@ var HarborLoop = (() => {
   }
   function shareForRevive() {
     if (!reviveAvailable()) return false;
+    if (run.outcome === "cleared") audio.playFanfare();
     setShareContext({
       modeId: run.modeId,
       difficulty: run.difficulty,
@@ -2630,6 +2732,7 @@ var HarborLoop = (() => {
     });
     shareRun();
     revive();
+    audio.playRevive();
     app.screen = "PLAYING";
     return true;
   }
@@ -2978,6 +3081,7 @@ var HarborLoop = (() => {
     return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
   }
   var DAILY_RECT = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
+  var MUTE_RECT = { x: 0, y: 22, w: 32, h: 26 };
   function rowRect(index) {
     return {
       x: MARGIN,
@@ -3000,6 +3104,15 @@ var HarborLoop = (() => {
     ctx.fillStyle = UI.primary;
     ctx.font = "900 12px sans-serif";
     ctx.fillText(starText, starChip.x + 28, starChip.y + 17);
+    MUTE_RECT.x = starChip.x - MUTE_RECT.w - 8;
+    panel(MUTE_RECT, { fill: UI.chip, radius: 10, lift: 2 });
+    drawSpeaker(
+      MUTE_RECT.x + MUTE_RECT.w / 2,
+      MUTE_RECT.y + MUTE_RECT.h / 2,
+      8,
+      audio.isMuted() ? "rgba(255,246,228,0.4)" : UI.primary,
+      !audio.isMuted()
+    );
     const next = nextUnlock();
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,246,228,0.55)";
@@ -3138,7 +3251,13 @@ var HarborLoop = (() => {
   }
   function handleMenuTap(x, y) {
     const stars = totalStars();
+    if (hits(MUTE_RECT, x, y)) {
+      setMuted(!audio.isMuted());
+      audio.playUiTap();
+      return true;
+    }
     if (hits(DAILY_RECT, x, y)) {
+      audio.playUiConfirm();
       startDaily();
       return true;
     }
@@ -3146,8 +3265,10 @@ var HarborLoop = (() => {
       if (!hits(pillRect(i), x, y)) continue;
       const difficulty = DIFFICULTIES[i];
       if (!difficultyUnlocked(difficulty, stars)) {
+        audio.playUiDenied();
         showToast(`需要 ${difficultyUnlockCost(difficulty)} 颗星解锁`);
       } else {
+        audio.playUiTap();
         app.difficulty = difficulty;
       }
       return true;
@@ -3156,13 +3277,19 @@ var HarborLoop = (() => {
       if (!hits(rowRect(i), x, y)) continue;
       const mode = MODES[i];
       if (!modeUnlocked(mode.id, stars)) {
+        audio.playUiDenied();
         showToast(`需要 ${modeUnlockCost(mode.id)} 颗星解锁`);
       } else {
+        audio.playUiConfirm();
         startMode(mode.id);
       }
       return true;
     }
     return false;
+  }
+  function setMuted(muted) {
+    audio.setMuted(muted);
+    saveMuted(muted);
   }
   function showToast(text) {
     toast.text = text;
@@ -3357,22 +3484,27 @@ var HarborLoop = (() => {
   function handleResultTap(x, y) {
     layoutTabs();
     if (hits(TAB_FRIENDS, x, y)) {
+      audio.playUiTap();
       boardTab = "friends";
       return true;
     }
     if (hits(TAB_GLOBAL, x, y)) {
+      audio.playUiTap();
       boardTab = "global";
       return true;
     }
     if (hits(RETRY, x, y)) {
+      audio.playUiConfirm();
       if (!shareForRevive()) retryRun();
       return true;
     }
     if (hits(MENU, x, y)) {
+      audio.playUiTap();
       openMenu();
       return true;
     }
     if (hits(SHARE, x, y)) {
+      audio.playUiConfirm();
       shareRun();
       return true;
     }
@@ -4105,6 +4237,7 @@ var HarborLoop = (() => {
     }
     scheduleFrame(frame);
   }
+  audio.setMuted(loadMuted());
   installInput();
   installShareMenu();
   if (typeof wx.onHide === "function") {

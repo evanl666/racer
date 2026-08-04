@@ -1,5 +1,6 @@
 /** Screen state machine and the navigation between menu, race and results. */
 
+import { audio } from './audio';
 import { dailyPlan, dailyStage, todayKey } from './daily';
 import { setShareContext, shareRun } from './share';
 import { submitFriendScore, submitGlobalScore } from './leaderboard';
@@ -74,6 +75,8 @@ function startDailyStageTwo(): void {
  */
 export function shareForRevive(): boolean {
   if (!reviveAvailable()) return false;
+  if (run.outcome === 'cleared') audio.playFanfare();
+
   setShareContext({
     modeId: run.modeId,
     difficulty: run.difficulty,
@@ -84,6 +87,7 @@ export function shareForRevive(): boolean {
   });
   shareRun();
   revive();
+  audio.playRevive();
   app.screen = 'PLAYING';
   return true;
 }

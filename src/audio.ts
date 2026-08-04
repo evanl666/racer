@@ -85,6 +85,9 @@ const TIER_RPM_MULTIPLIER = [1.00, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 
 
 const MAX_VOICES = 12;
 
+/** Master level when unmuted. */
+const MASTER_VOLUME = 0.46;
+
 class AudioEngine {
   private context: AudioContext | null = null;
   private started = false;
@@ -102,6 +105,7 @@ class AudioEngine {
   private engineNoiseFilter: BiquadFilterNode | null = null;
   private engineNoiseGain: GainNode | null = null;
 
+  private muted = false;
   private smoothEngineFrequency = 48;
   private smoothEngineVolume = 0;
   private smoothThrottle = 0;
@@ -152,7 +156,7 @@ class AudioEngine {
         this.engineHigh = context.createOscillator();
         this.engineNoise = createLoopingNoiseSource(context);
 
-        setAudioParam(this.masterGain.gain, 0.46);
+        setAudioParam(this.masterGain.gain, this.muted ? 0 : MASTER_VOLUME);
         setAudioParam(this.engineGain.gain, 0.0001);
         setAudioParam(this.engineMidGain.gain, 0.070);
         setAudioParam(this.engineHighGain.gain, 0.018);
@@ -236,6 +240,50 @@ class AudioEngine {
     } catch (error) {
       /* one failed effect must not stop the game */
     }
+  }
+
+  /** Silence without tearing anything down, so unmuting is instant. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    setAudioParam(this.masterGain?.gain, muted ? 0 : MASTER_VOLUME);
+  }
+
+  isMuted(): boolean {
+    return this.muted;
+  }
+
+  /** UI tap. Deliberately dry and short: menus should click, not sing. */
+  playUiTap(): void {
+    this.addTone('triangle', 0.045, 660, 520, 0.05);
+  }
+
+  /** Confirmation, one step up from a tap: starting a run, choosing a mode. */
+  playUiConfirm(): void {
+    this.addTone('triangle', 0.07, 520, 780, 0.055);
+    this.addTone('sine', 0.09, 780, 1040, 0.022);
+  }
+
+  /** Refusal: a flat, slightly sour pair that reads as "no" without being harsh. */
+  playUiDenied(): void {
+    this.addTone('sawtooth', 0.09, 220, 180, 0.038);
+    this.addTone('triangle', 0.07, 175, 150, 0.022);
+  }
+
+  /** Stage or objective cleared: a rising major triad. */
+  playFanfare(): void {
+    this.effectDuck = Math.max(this.effectDuck, 0.4);
+    const root = 392;
+    this.addTone('triangle', 0.13, root, root, 0.06);
+    this.addTone('triangle', 0.15, root * 1.26, root * 1.26, 0.055);
+    this.addTone('triangle', 0.22, root * 1.5, root * 1.5, 0.05);
+    this.addTone('sine', 0.3, root * 3, root * 3, 0.016);
+  }
+
+  /** Revive: a low swell up into the engine coming back. */
+  playRevive(): void {
+    this.effectDuck = Math.max(this.effectDuck, 0.5);
+    this.addTone('sawtooth', 0.34, 90, 300, 0.07);
+    this.addTone('sine', 0.4, 300, 660, 0.03);
   }
 
   playLaneChange(direction: number): void {

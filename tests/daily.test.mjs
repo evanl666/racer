@@ -151,4 +151,11 @@ game.startMode('combo-racers');
 game.run.outcome = 'cleared';
 check('a cleared run offers no revive', game.canRevive() === false);
 
+// --- audio preference -------------------------------------------------------
+// Muting must survive a reload; a mini game gets played in public.
+game.audio.setMuted(true);
+check('mute takes effect', game.audio.isMuted() === true);
+game.audio.setMuted(false);
+check('unmute takes effect', game.audio.isMuted() === false);
+
 finish();

@@ -46,3 +46,39 @@ export function drawLock(cx: number, cy: number, size: number, color: string): v
   ctx.fill();
   ctx.restore();
 }
+
+export function drawSpeaker(cx: number, cy: number, size: number, color: string, on: boolean): void {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.2, size * 0.16);
+  ctx.lineCap = 'round';
+
+  // Cone.
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.6, cy - size * 0.28);
+  ctx.lineTo(cx - size * 0.2, cy - size * 0.28);
+  ctx.lineTo(cx + size * 0.18, cy - size * 0.62);
+  ctx.lineTo(cx + size * 0.18, cy + size * 0.62);
+  ctx.lineTo(cx - size * 0.2, cy + size * 0.28);
+  ctx.lineTo(cx - size * 0.6, cy + size * 0.28);
+  ctx.closePath();
+  ctx.fill();
+
+  if (on) {
+    // Two arcs for sound.
+    ctx.beginPath();
+    ctx.arc(cx + size * 0.24, cy, size * 0.42, -0.9, 0.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx + size * 0.24, cy, size * 0.72, -0.8, 0.8);
+    ctx.stroke();
+  } else {
+    // A slash reads as muted at any size.
+    ctx.beginPath();
+    ctx.moveTo(cx + size * 0.32, cy - size * 0.42);
+    ctx.lineTo(cx + size * 0.86, cy + size * 0.42);
+    ctx.stroke();
+  }
+  ctx.restore();
+}

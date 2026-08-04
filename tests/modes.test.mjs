@@ -53,8 +53,9 @@ check('every mode id is unique', seenIds.size === game.MODES.length);
 // --- every mode runs to a terminal state ----------------------------------
 for (const mode of game.MODES) {
   let threw = null;
-  // Untimed modes (Speed Monkey, Endurance) end on a crash; give them room.
-  const budget = Number.isFinite(mode.timeLimit) ? mode.timeLimit + 3 : 120;
+  // Hit-stop pauses the run clock, so a kill-heavy mode needs more wall time than
+  // its limit. Untimed modes (Speed Monkey, Endurance) end on a crash instead.
+  const budget = Number.isFinite(mode.timeLimit) ? mode.timeLimit * 1.3 + 12 : 120;
   try {
     playMode(mode.id, budget);
   } catch (error) {

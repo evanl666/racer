@@ -1,5 +1,5 @@
 /**
- * Harbor Loop — WeChat Mini Game prototype v0.9.4.
+ * Harbor Loop — WeChat Mini Game prototype v0.9.5.
  *
  * Scope:
  * - One extra-long, smooth, non-crossing six-lane top-down circuit.
@@ -8,7 +8,9 @@
  * - AI lane changes are blocked inside a speed-scaled player safety zone.
  * - Overtake -> combo +1; every ten overtakes triggers a permanent speed tier.
  * - Collision -> speed 0, combo reset, flash, recover to base speed.
- * - Minimal HUD: only corner combo; invisible left/right touch zones.
+ * - Minimal HUD: only corner combo, plus a visible bottom control bar.
+ * - Two lane buttons and a hold-to-accelerate throttle button for touch play;
+ *   the track area above them keeps the old left/right half tap for lane changes.
  * - Robust keyboard focus and key handling for browser testing.
  * - Hold Up / W / Space for throttle; release to coast back to cruise speed.
  * - Engine RPM and real road speed step up every ten overtakes.
@@ -855,9 +857,30 @@ const AI_BLUEPRINTS = [
   { fraction: 0.97, lane: 5, speed: 118 }
 ];
 
+// Visible on-screen controls. The widest road stroke reaches y = 733 in design
+// space, so this bottom strip never covers the track or any car, and its lower
+// edge stops at 810 to stay clear of the iPhone home indicator.
+const CONTROL_BAR_TOP = 738;
+const CONTROL_H = 72;
+const CONTROL_RADIUS = 18;
+const CONTROL_HIT_PADDING = 10;
+const CONTROL_FLASH_DURATION = 0.14;
+
+const CONTROLS = [
+  { id: 'left', kind: 'lane', direction: +1, x: 20, w: 76 },
+  { id: 'right', kind: 'lane', direction: -1, x: 104, w: 76 },
+  { id: 'throttle', kind: 'throttle', direction: 0, x: 236, w: 134 }
+].map((control) => ({ ...control, y: CONTROL_BAR_TOP, h: CONTROL_H }));
+
 const inputState = {
   throttle: false
 };
+
+// pointerId -> control id ('left' | 'right' | 'throttle' | 'track' | 'none').
+// Tracking every pointer separately lets one thumb hold the throttle while the
+// other taps a lane button.
+const activePointers = new Map();
+const laneButtonFlash = { left: 0, right: 0 };
 
 const player = {
   distance: 0,
@@ -951,11 +974,84 @@ function setThrottle(active) {
   if (inputState.throttle) audio.ensureStarted();
 }
 
-function inputAtScreenPoint(screenX, screenY) {
-  const x = (screenX - offsetX) / scale;
-  // Invisible full-screen touch zones replace the visible arrow buttons.
-  if (x < DESIGN_W * 0.5) requestLaneChange(+1);
-  else requestLaneChange(-1);
+function screenToDesignX(screenX) {
+  return (screenX - offsetX) / scale;
+}
+
+function screenToDesignY(screenY) {
+  return (screenY - offsetY) / scale;
+}
+
+function controlAtDesignPoint(x, y) {
+  for (const control of CONTROLS) {
+    if (x >= control.x - CONTROL_HIT_PADDING && x <= control.x + control.w + CONTROL_HIT_PADDING &&
+        y >= control.y - CONTROL_HIT_PADDING && y <= control.y + control.h + CONTROL_HIT_PADDING) {
+      return control;
+    }
+  }
+  return null;
+}
+
+function refreshThrottleFromPointers() {
+  let held = false;
+  for (const assignment of activePointers.values()) {
+    if (assignment === 'throttle') {
+      held = true;
+      break;
+    }
+  }
+  setThrottle(held);
+}
+
+function pressControl(control) {
+  if (control.kind === 'throttle') return;
+  laneButtonFlash[control.id] = CONTROL_FLASH_DURATION;
+  requestLaneChange(control.direction);
+}
+
+function pointerDown(pointerId, screenX, screenY) {
+  const x = screenToDesignX(screenX);
+  const y = screenToDesignY(screenY);
+  const control = controlAtDesignPoint(x, y);
+
+  if (control) {
+    activePointers.set(pointerId, control.id);
+    if (control.kind === 'throttle') audio.ensureStarted();
+    pressControl(control);
+    refreshThrottleFromPointers();
+    return;
+  }
+
+  // Above the control bar the original invisible left/right halves still work,
+  // so the old one-thumb play style keeps working alongside the buttons.
+  activePointers.set(pointerId, 'track');
+  requestLaneChange(x < DESIGN_W * 0.5 ? +1 : -1);
+}
+
+function pointerMove(pointerId, screenX, screenY) {
+  if (!activePointers.has(pointerId)) return;
+  const control = controlAtDesignPoint(screenToDesignX(screenX), screenToDesignY(screenY));
+  const previous = activePointers.get(pointerId);
+
+  // Only the throttle reacts to sliding: a thumb that drifts off it releases,
+  // and one that drifts onto it engages. Lane buttons stay strictly per-tap.
+  if (control && control.kind === 'throttle') {
+    if (previous !== 'throttle') audio.ensureStarted();
+    activePointers.set(pointerId, 'throttle');
+  } else if (previous === 'throttle') {
+    activePointers.set(pointerId, 'none');
+  }
+  refreshThrottleFromPointers();
+}
+
+function pointerUp(pointerId) {
+  if (!activePointers.delete(pointerId)) return;
+  refreshThrottleFromPointers();
+}
+
+function releaseAllPointers() {
+  activePointers.clear();
+  setThrottle(false);
 }
 
 function isThrottleKey(event) {
@@ -999,25 +1095,63 @@ function handleKeyboardRelease(event) {
 }
 
 function installInput() {
-  if (typeof wx.onTouchStart === 'function') {
-    wx.onTouchStart((event) => {
-      const touch = event.touches && event.touches[0];
-      if (touch) inputAtScreenPoint(touch.clientX, touch.clientY);
-    });
+  const usingWxTouch = typeof wx.onTouchStart === 'function';
+
+  if (usingWxTouch) {
+    // changedTouches carries exactly the fingers this event is about, which is what
+    // multi-touch bookkeeping needs; event.touches is the full current set.
+    const forEachChanged = (event, handler) => {
+      const list = (event && (event.changedTouches || event.touches)) || [];
+      for (let i = 0; i < list.length; i++) {
+        const touch = list[i];
+        if (touch) handler(touch, touch.identifier != null ? touch.identifier : i);
+      }
+    };
+
+    wx.onTouchStart((event) => forEachChanged(event, (touch, id) => pointerDown(id, touch.clientX, touch.clientY)));
+    if (typeof wx.onTouchMove === 'function') {
+      wx.onTouchMove((event) => forEachChanged(event, (touch, id) => pointerMove(id, touch.clientX, touch.clientY)));
+    }
+    if (typeof wx.onTouchEnd === 'function') {
+      wx.onTouchEnd((event) => forEachChanged(event, (touch, id) => pointerUp(id)));
+    }
+    if (typeof wx.onTouchCancel === 'function') {
+      wx.onTouchCancel((event) => forEachChanged(event, (touch, id) => pointerUp(id)));
+    }
   }
 
-  if (canvas && typeof canvas.addEventListener === 'function') {
+  // Only bind DOM pointer events when wx touch events are absent, otherwise a
+  // single tap would be handled twice and change two lanes at once.
+  if (!usingWxTouch && canvas && typeof canvas.addEventListener === 'function') {
     // A focusable canvas makes browser keyboard testing reliable, including after a click.
     if (typeof canvas.setAttribute === 'function') canvas.setAttribute('tabindex', '0');
     canvas.tabIndex = 0;
 
+    const localPoint = (event) => {
+      const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: VIEW_W, height: VIEW_H };
+      return {
+        x: (event.clientX - rect.left) * VIEW_W / Math.max(1, rect.width),
+        y: (event.clientY - rect.top) * VIEW_H / Math.max(1, rect.height)
+      };
+    };
+
     canvas.addEventListener('pointerdown', (event) => {
       if (typeof canvas.focus === 'function') canvas.focus({ preventScroll: true });
-      const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: VIEW_W, height: VIEW_H };
-      const localX = (event.clientX - rect.left) * VIEW_W / Math.max(1, rect.width);
-      const localY = (event.clientY - rect.top) * VIEW_H / Math.max(1, rect.height);
-      inputAtScreenPoint(localX, localY);
+      const point = localPoint(event);
+      pointerDown(event.pointerId, point.x, point.y);
+      if (typeof event.preventDefault === 'function') event.preventDefault();
     });
+
+    // Move and release listen on window so a thumb that slides off the canvas
+    // cannot leave the throttle stuck on.
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('pointermove', (event) => {
+        const point = localPoint(event);
+        pointerMove(event.pointerId, point.x, point.y);
+      });
+      window.addEventListener('pointerup', (event) => pointerUp(event.pointerId));
+      window.addEventListener('pointercancel', (event) => pointerUp(event.pointerId));
+    }
 
     if (typeof canvas.focus === 'function') {
       setTimeout(() => canvas.focus({ preventScroll: true }), 0);
@@ -1028,7 +1162,7 @@ function installInput() {
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
     window.addEventListener('keydown', handleKeyboardInput, { capture: true, passive: false });
     window.addEventListener('keyup', handleKeyboardRelease, { capture: true, passive: false });
-    window.addEventListener('blur', () => setThrottle(false));
+    window.addEventListener('blur', releaseAllPointers);
   }
 }
 
@@ -1348,12 +1482,63 @@ function drawHud() {
   }
 }
 
+function drawLaneArrow(cx, cy, direction, color) {
+  // direction +1 is the left-hand lane change, so it draws the left-pointing arrow.
+  const tip = direction > 0 ? -15 : 15;
+  ctx.beginPath();
+  ctx.moveTo(cx + tip, cy);
+  ctx.lineTo(cx - tip * 0.6, cy - 15);
+  ctx.lineTo(cx - tip * 0.6, cy + 15);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function drawControls() {
+  for (const control of CONTROLS) {
+    const active = control.kind === 'throttle' ? inputState.throttle : laneButtonFlash[control.id] > 0;
+    const cx = control.x + control.w * 0.5;
+    const cy = control.y + control.h * 0.5;
+
+    roundRect(ctx, control.x, control.y, control.w, control.h, CONTROL_RADIUS);
+    ctx.fillStyle = COLORS.button;
+    ctx.fill();
+    if (active) {
+      ctx.fillStyle = COLORS.buttonActive;
+      ctx.fill();
+    }
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = active ? COLORS.accentLight : 'rgba(247,244,234,0.28)';
+    ctx.stroke();
+
+    const glyph = active ? COLORS.accentLight : COLORS.text;
+    if (control.kind === 'lane') {
+      drawLaneArrow(cx, cy, control.direction, glyph);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 19);
+      ctx.lineTo(cx - 15, cy);
+      ctx.lineTo(cx + 15, cy);
+      ctx.closePath();
+      ctx.fillStyle = glyph;
+      ctx.fill();
+      ctx.fillStyle = glyph;
+      ctx.font = '900 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAS', cx, cy + 21);
+    }
+  }
+}
+
 let lastTime = Date.now();
 
 function frame(nowValue) {
   const now = typeof nowValue === 'number' ? nowValue : Date.now();
   const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
   lastTime = now;
+
+  laneButtonFlash.left = Math.max(0, laneButtonFlash.left - dt);
+  laneButtonFlash.right = Math.max(0, laneButtonFlash.right - dt);
 
   updateAi(dt);
   updatePlayer(dt);
@@ -1370,6 +1555,7 @@ function frame(nowValue) {
   drawTrack();
   drawCars();
   drawHud();
+  drawControls();
   ctx.restore();
 
   scheduleFrame(frame);
@@ -1382,7 +1568,7 @@ const scheduleFrame = typeof requestAnimationFrame === 'function'
 resetGame();
 installInput();
 
-if (typeof wx.onHide === 'function') wx.onHide(() => audio.suspend());
+if (typeof wx.onHide === 'function') wx.onHide(() => { releaseAllPointers(); audio.suspend(); });
 if (typeof wx.onShow === 'function') wx.onShow(() => audio.resume());
 
 scheduleFrame(frame);

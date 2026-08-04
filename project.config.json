@@ -1,5 +1,5 @@
 {
-  "description": "Harbor Loop - WeChat Mini Game prototype",
+  "description": "Harbor Loop V0.9.4 - ten-pass high-speed tiers",
   "packOptions": {
     "ignore": []
   },
@@ -31,6 +31,6 @@
   "compileType": "game",
   "libVersion": "3.8.10",
   "appid": "touristappid",
-  "projectname": "harbor-loop-prototype",
+  "projectname": "harbor-loop-v0-9-4",
   "condition": {}
 }

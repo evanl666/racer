@@ -49,6 +49,7 @@ var HarborLoop = (() => {
     canRevive: () => canRevive,
     careerPoints: () => careerPoints,
     clearSeed: () => clearSeed,
+    currentStreak: () => currentStreak,
     dailyPlan: () => dailyPlan,
     dailyStage: () => dailyStage,
     debugPointerCount: () => debugPointerCount,
@@ -60,10 +61,12 @@ var HarborLoop = (() => {
     loadMuted: () => loadMuted,
     modeUnlockCost: () => modeUnlockCost,
     modeUnlocked: () => modeUnlocked,
+    onboardingActive: () => onboardingActive,
     openMenu: () => openMenu,
     player: () => player,
     random: () => random,
     renderShareCard: () => renderShareCard,
+    resetOnboarding: () => resetOnboarding,
     retryRun: () => retryRun,
     run: () => run,
     saveMuted: () => saveMuted,
@@ -75,6 +78,7 @@ var HarborLoop = (() => {
     startMode: () => startMode,
     todayKey: () => todayKey,
     totalStars: () => totalStars,
+    touchStreak: () => touchStreak,
     trackLength: () => trackLength
   });
 
@@ -1390,6 +1394,200 @@ var HarborLoop = (() => {
     }
   };
 
+  // src/storage.ts
+  var STORAGE_KEY = "harbor-loop-bests-v1";
+  var cache = null;
+  function readRaw() {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.getStorageSync === "function") {
+        const value = anyWx.getStorageSync(STORAGE_KEY);
+        return typeof value === "string" && value ? value : null;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+    }
+    return null;
+  }
+  function writeRaw(value) {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.setStorageSync === "function") {
+        anyWx.setStorageSync(STORAGE_KEY, value);
+        return;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(STORAGE_KEY, value);
+    } catch (error) {
+    }
+  }
+  function table() {
+    if (cache) return cache;
+    const raw = readRaw();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          cache = parsed;
+          return cache;
+        }
+      } catch (error) {
+      }
+    }
+    cache = {};
+    return cache;
+  }
+  function key(modeId, difficulty) {
+    return `${modeId}:${difficulty}`;
+  }
+  function bestScore(modeId, difficulty) {
+    const value = table()[key(modeId, difficulty)];
+    return typeof value === "number" ? value : null;
+  }
+  function submitScore(modeId, difficulty, score, lowerIsBetter) {
+    const current = bestScore(modeId, difficulty);
+    const improved = current === null || (lowerIsBetter ? score < current : score > current);
+    if (!improved) return false;
+    table()[key(modeId, difficulty)] = score;
+    writeRaw(JSON.stringify(table()));
+    return true;
+  }
+  var MUTE_KEY = "harbor-loop-muted-v1";
+  function loadMuted() {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.getStorageSync === "function") return anyWx.getStorageSync(MUTE_KEY) === "1";
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(MUTE_KEY) === "1";
+    } catch (error) {
+    }
+    return false;
+  }
+  function saveMuted(muted) {
+    const value = muted ? "1" : "0";
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.setStorageSync === "function") {
+        anyWx.setStorageSync(MUTE_KEY, value);
+        return;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(MUTE_KEY, value);
+    } catch (error) {
+    }
+  }
+  var ONBOARDED_KEY = "harbor-loop-onboarded-v1";
+  var STREAK_KEY = "harbor-loop-streak-v1";
+  function readFlag(key2) {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.getStorageSync === "function") {
+        const value = anyWx.getStorageSync(key2);
+        return typeof value === "string" && value ? value : null;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(key2);
+    } catch (error) {
+    }
+    return null;
+  }
+  function writeFlag(key2, value) {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.setStorageSync === "function") {
+        anyWx.setStorageSync(key2, value);
+        return;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(key2, value);
+    } catch (error) {
+    }
+  }
+  function loadOnboarded() {
+    return readFlag(ONBOARDED_KEY) === "1";
+  }
+  function saveOnboarded(done) {
+    writeFlag(ONBOARDED_KEY, done ? "1" : "0");
+  }
+  function loadStreak() {
+    const raw = readFlag(STREAK_KEY);
+    if (!raw) return { days: 0, lastDay: "" };
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        days: typeof parsed.days === "number" ? parsed.days : 0,
+        lastDay: typeof parsed.lastDay === "string" ? parsed.lastDay : ""
+      };
+    } catch (error) {
+      return { days: 0, lastDay: "" };
+    }
+  }
+  function saveStreak(streak) {
+    writeFlag(STREAK_KEY, JSON.stringify(streak));
+  }
+  function careerPoints() {
+    return Object.entries(table()).reduce((total, [entryKey, value]) => {
+      if (entryKey.startsWith("time-attack:")) return total;
+      return total + (typeof value === "number" ? value : 0);
+    }, 0);
+  }
+
+  // src/onboarding.ts
+  var MAX_SECONDS = 12;
+  var state2 = {
+    active: false,
+    usedLane: false,
+    usedThrottle: false,
+    elapsed: 0
+  };
+  function beginOnboarding() {
+    if (loadOnboarded()) {
+      state2.active = false;
+      return;
+    }
+    state2.active = true;
+    state2.usedLane = false;
+    state2.usedThrottle = false;
+    state2.elapsed = 0;
+  }
+  function onboardingActive() {
+    return state2.active;
+  }
+  function noteLaneChange() {
+    if (state2.active) state2.usedLane = true;
+  }
+  function noteThrottle() {
+    if (state2.active) state2.usedThrottle = true;
+  }
+  function updateOnboarding(dt) {
+    if (!state2.active) return;
+    state2.elapsed += dt;
+    if (state2.usedLane && state2.usedThrottle || state2.elapsed > MAX_SECONDS) {
+      state2.active = false;
+      saveOnboarded(true);
+    }
+  }
+  function onboardingState() {
+    return { lane: !state2.usedLane, throttle: !state2.usedThrottle };
+  }
+  function resetOnboarding() {
+    saveOnboarded(false);
+    state2.active = false;
+  }
+
   // src/player.ts
   function laneInputStateAllows() {
     return player.state !== "CRASHED";
@@ -1399,6 +1597,7 @@ var HarborLoop = (() => {
     audio.ensureStarted();
     const target = Math.max(0, Math.min(LANE_COUNT - 1, player.lane + direction));
     if (target === player.lane) return;
+    noteLaneChange();
     audio.playLaneChange(direction);
     player.laneFrom = player.visualLane;
     player.laneTo = target;
@@ -1410,7 +1609,10 @@ var HarborLoop = (() => {
   }
   function setThrottle(active) {
     inputState.throttle = Boolean(active);
-    if (inputState.throttle) audio.ensureStarted();
+    if (inputState.throttle) {
+      noteThrottle();
+      audio.ensureStarted();
+    }
   }
   function beginCollision() {
     if (player.invincible > 0 || player.state === "CRASHED") return;
@@ -2263,104 +2465,6 @@ var HarborLoop = (() => {
     return board;
   }
 
-  // src/storage.ts
-  var STORAGE_KEY = "harbor-loop-bests-v1";
-  var cache = null;
-  function readRaw() {
-    try {
-      const anyWx = wx;
-      if (typeof anyWx.getStorageSync === "function") {
-        const value = anyWx.getStorageSync(STORAGE_KEY);
-        return typeof value === "string" && value ? value : null;
-      }
-    } catch (error) {
-    }
-    try {
-      if (typeof localStorage !== "undefined") return localStorage.getItem(STORAGE_KEY);
-    } catch (error) {
-    }
-    return null;
-  }
-  function writeRaw(value) {
-    try {
-      const anyWx = wx;
-      if (typeof anyWx.setStorageSync === "function") {
-        anyWx.setStorageSync(STORAGE_KEY, value);
-        return;
-      }
-    } catch (error) {
-    }
-    try {
-      if (typeof localStorage !== "undefined") localStorage.setItem(STORAGE_KEY, value);
-    } catch (error) {
-    }
-  }
-  function table() {
-    if (cache) return cache;
-    const raw = readRaw();
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object") {
-          cache = parsed;
-          return cache;
-        }
-      } catch (error) {
-      }
-    }
-    cache = {};
-    return cache;
-  }
-  function key(modeId, difficulty) {
-    return `${modeId}:${difficulty}`;
-  }
-  function bestScore(modeId, difficulty) {
-    const value = table()[key(modeId, difficulty)];
-    return typeof value === "number" ? value : null;
-  }
-  function submitScore(modeId, difficulty, score, lowerIsBetter) {
-    const current = bestScore(modeId, difficulty);
-    const improved = current === null || (lowerIsBetter ? score < current : score > current);
-    if (!improved) return false;
-    table()[key(modeId, difficulty)] = score;
-    writeRaw(JSON.stringify(table()));
-    return true;
-  }
-  var MUTE_KEY = "harbor-loop-muted-v1";
-  function loadMuted() {
-    try {
-      const anyWx = wx;
-      if (typeof anyWx.getStorageSync === "function") return anyWx.getStorageSync(MUTE_KEY) === "1";
-    } catch (error) {
-    }
-    try {
-      if (typeof localStorage !== "undefined") return localStorage.getItem(MUTE_KEY) === "1";
-    } catch (error) {
-    }
-    return false;
-  }
-  function saveMuted(muted) {
-    const value = muted ? "1" : "0";
-    try {
-      const anyWx = wx;
-      if (typeof anyWx.setStorageSync === "function") {
-        anyWx.setStorageSync(MUTE_KEY, value);
-        return;
-      }
-    } catch (error) {
-    }
-    try {
-      if (typeof localStorage !== "undefined") localStorage.setItem(MUTE_KEY, value);
-    } catch (error) {
-    }
-  }
-  function careerPoints() {
-    return Object.entries(table()).reduce((total, [entryKey, value]) => {
-      if (entryKey.startsWith("time-attack:")) return total;
-      return total + (typeof value === "number" ? value : 0);
-    }, 0);
-  }
-
   // src/progress.ts
   var MAX_STARS_PER_ENTRY = 3;
   var unlockOverride = false;
@@ -2461,6 +2565,31 @@ var HarborLoop = (() => {
     restarting = true;
   }
 
+  // src/streak.ts
+  function previousDay(day) {
+    const [year, month, date] = day.split("-").map(Number);
+    if (!year || !month || !date) return "";
+    const stamp = new Date(year, month - 1, date);
+    stamp.setDate(stamp.getDate() - 1);
+    const pad2 = (value) => value < 10 ? `0${value}` : String(value);
+    return `${stamp.getFullYear()}-${pad2(stamp.getMonth() + 1)}-${pad2(stamp.getDate())}`;
+  }
+  function touchStreak(today = todayKey()) {
+    const current = loadStreak();
+    if (current.lastDay === today) return current;
+    const next = {
+      days: current.lastDay === previousDay(today) ? current.days + 1 : 1,
+      lastDay: today
+    };
+    saveStreak(next);
+    return next;
+  }
+  function currentStreak(today = todayKey()) {
+    const streak = loadStreak();
+    if (streak.lastDay === today || streak.lastDay === previousDay(today)) return streak.days;
+    return 0;
+  }
+
   // src/render/particles.ts
   var POOL_SIZE = 160;
   var pool = Array.from({ length: POOL_SIZE }, () => ({
@@ -2555,7 +2684,7 @@ var HarborLoop = (() => {
 
   // src/feel.ts
   var MAX_SHAKE = 9;
-  var state2 = {
+  var state3 = {
     /** Seconds of simulation freeze left. */
     hitStop: 0,
     shake: 0,
@@ -2563,38 +2692,38 @@ var HarborLoop = (() => {
     shakeTime: 0
   };
   function addHitStop(seconds) {
-    state2.hitStop = Math.max(state2.hitStop, seconds);
+    state3.hitStop = Math.max(state3.hitStop, seconds);
   }
   function addShake(strength, angle = Math.random() * Math.PI * 2) {
-    if (strength <= state2.shake) return;
-    state2.shake = Math.min(MAX_SHAKE, strength);
-    state2.shakeAngle = angle;
-    state2.shakeTime = 0;
+    if (strength <= state3.shake) return;
+    state3.shake = Math.min(MAX_SHAKE, strength);
+    state3.shakeAngle = angle;
+    state3.shakeTime = 0;
   }
   function consumeHitStop(dt) {
-    if (state2.hitStop <= 0) return dt;
-    state2.hitStop = Math.max(0, state2.hitStop - dt);
+    if (state3.hitStop <= 0) return dt;
+    state3.hitStop = Math.max(0, state3.hitStop - dt);
     return 0;
   }
   function updateFeel(dt) {
-    state2.shakeTime += dt;
-    state2.shake = Math.max(0, state2.shake - dt * 52);
+    state3.shakeTime += dt;
+    state3.shake = Math.max(0, state3.shake - dt * 52);
   }
   function shakeOffsetX() {
-    if (state2.shake <= 0) return 0;
-    return Math.cos(state2.shakeAngle + state2.shakeTime * 47) * state2.shake;
+    if (state3.shake <= 0) return 0;
+    return Math.cos(state3.shakeAngle + state3.shakeTime * 47) * state3.shake;
   }
   function shakeOffsetY() {
-    if (state2.shake <= 0) return 0;
-    return Math.sin(state2.shakeAngle + state2.shakeTime * 41) * state2.shake * 0.7;
+    if (state3.shake <= 0) return 0;
+    return Math.sin(state3.shakeAngle + state3.shakeTime * 41) * state3.shake * 0.7;
   }
   function resetFeel() {
-    state2.hitStop = 0;
-    state2.shake = 0;
-    state2.shakeTime = 0;
+    state3.hitStop = 0;
+    state3.shake = 0;
+    state3.shakeTime = 0;
   }
   function feelState() {
-    return { hitStop: state2.hitStop, shake: state2.shake };
+    return { hitStop: state3.hitStop, shake: state3.shake };
   }
 
   // src/run.ts
@@ -2629,6 +2758,8 @@ var HarborLoop = (() => {
     resetFeel();
     clearParticles();
     resetClock();
+    beginOnboarding();
+    touchStreak();
     run.modeId = modeId;
     run.difficulty = difficulty;
     run.elapsed = 0;
@@ -2935,6 +3066,26 @@ var HarborLoop = (() => {
     ctx.font = "700 9px sans-serif";
     ctx.fillText("COMBO RESET", 195, 437);
   }
+  function drawOnboarding() {
+    if (!onboardingActive()) return;
+    const hints = onboardingState();
+    ctx.save();
+    ctx.globalAlpha = 0.78 + Math.sin(player.travelled * 0.05) * 0.2;
+    ctx.textAlign = "center";
+    const hint = (text, cx, cy, size, color) => {
+      ctx.font = `900 ${size}px sans-serif`;
+      const width = ctx.measureText(text).width + 20;
+      roundRect(ctx, cx - width / 2, cy - size * 0.9, width, size * 1.8, size);
+      ctx.fillStyle = "rgba(8,17,25,0.86)";
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.fillText(text, cx, cy + size * 0.36);
+    };
+    if (hints.lane) hint("点这里换车道", 96, 716, 11, COLORS.accentLight);
+    if (hints.throttle) hint("按住加速", 303, 716, 11, COLORS.accentLight);
+    if (hints.lane || hints.throttle) hint("超车加 Combo · 撞车清零", DESIGN_W / 2, 684, 10, COLORS.text);
+    ctx.restore();
+  }
   function drawHud() {
     drawComboPill();
     drawClockAndScore();
@@ -2942,6 +3093,7 @@ var HarborLoop = (() => {
     drawObjectiveBar();
     drawCrashBanner();
     drawBanner();
+    drawOnboarding();
   }
   function drawLaneArrow(cx, cy, direction, color) {
     const tip = direction > 0 ? -15 : 15;
@@ -3117,11 +3269,9 @@ var HarborLoop = (() => {
     ctx.textAlign = "left";
     ctx.fillStyle = "rgba(255,246,228,0.55)";
     ctx.font = "600 10px sans-serif";
-    ctx.fillText(
-      next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : "全部模式和难度已解锁",
-      MARGIN,
-      60
-    );
+    const streak = currentStreak();
+    const progressText = next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : "全部模式和难度已解锁";
+    ctx.fillText(streak > 1 ? `连续 ${streak} 天 · ${progressText}` : progressText, MARGIN, 60);
     DIFFICULTIES.forEach((difficulty, index) => {
       const rect = pillRect(index);
       const unlocked = difficultyUnlocked(difficulty, stars);
@@ -4181,6 +4331,7 @@ var HarborLoop = (() => {
   // src/main.ts
   function stepRace(dt) {
     updateControlFlash(dt);
+    updateOnboarding(dt);
     updateFeel(dt);
     updateParticles(dt);
     const simDt = consumeHitStop(dt);

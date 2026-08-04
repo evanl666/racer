@@ -6,6 +6,7 @@ import { modeById } from '../modes';
 import { ctx, DESIGN_W } from '../platform';
 import { run } from '../run';
 import { inputState, player } from '../state';
+import { onboardingActive, onboardingState } from '../onboarding';
 import { COLORS } from '../theme';
 import { roundRect } from './primitives';
 
@@ -109,6 +110,38 @@ function drawCrashBanner(): void {
   ctx.fillText('COMBO RESET', 195, 437);
 }
 
+/**
+ * Points at whichever control the player has not tried yet. Drawn above the
+ * control bar so it never covers the buttons it is describing.
+ */
+function drawOnboarding(): void {
+  if (!onboardingActive()) return;
+  const hints = onboardingState();
+
+  ctx.save();
+  // A gentle pulse, because a static label reads as decoration.
+  ctx.globalAlpha = 0.78 + Math.sin(player.travelled * 0.05) * 0.2;
+  ctx.textAlign = 'center';
+
+  // Each hint sits on its own backing: the road underneath is busy and light,
+  // and unbacked text on it was unreadable.
+  const hint = (text: string, cx: number, cy: number, size: number, color: string): void => {
+    ctx.font = `900 ${size}px sans-serif`;
+    const width = ctx.measureText(text).width + 20;
+    roundRect(ctx, cx - width / 2, cy - size * 0.9, width, size * 1.8, size);
+    ctx.fillStyle = 'rgba(8,17,25,0.86)';
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.fillText(text, cx, cy + size * 0.36);
+  };
+
+  if (hints.lane) hint('点这里换车道', 96, 716, 11, COLORS.accentLight);
+  if (hints.throttle) hint('按住加速', 303, 716, 11, COLORS.accentLight);
+  if (hints.lane || hints.throttle) hint('超车加 Combo · 撞车清零', DESIGN_W / 2, 684, 10, COLORS.text);
+
+  ctx.restore();
+}
+
 export function drawHud(): void {
   drawComboPill();
   drawClockAndScore();
@@ -116,6 +149,7 @@ export function drawHud(): void {
   drawObjectiveBar();
   drawCrashBanner();
   drawBanner();
+  drawOnboarding();
 }
 
 function drawLaneArrow(cx: number, cy: number, direction: number, color: string): void {

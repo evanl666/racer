@@ -10,6 +10,7 @@ import {
 } from './config';
 import { tuning } from './difficulty';
 import { moveToward } from './mathUtil';
+import { noteLaneChange, noteThrottle } from './onboarding';
 import { vibrate } from './platform';
 import { baseCruiseSpeed, currentTargetSpeed, inputState, player } from './state';
 import { advanceDistanceAtRoadSpeed } from './track';
@@ -25,6 +26,7 @@ export function requestLaneChange(direction: number): void {
   const target = Math.max(0, Math.min(LANE_COUNT - 1, player.lane + direction));
   if (target === player.lane) return;
 
+  noteLaneChange();
   audio.playLaneChange(direction);
   player.laneFrom = player.visualLane;
   player.laneTo = target;
@@ -37,7 +39,10 @@ export function requestLaneChange(direction: number): void {
 
 export function setThrottle(active: boolean): void {
   inputState.throttle = Boolean(active);
-  if (inputState.throttle) audio.ensureStarted();
+  if (inputState.throttle) {
+    noteThrottle();
+    audio.ensureStarted();
+  }
 }
 
 export function beginCollision(): void {

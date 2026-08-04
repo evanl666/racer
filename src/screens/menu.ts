@@ -20,6 +20,7 @@ import {
 import { drawLock, drawSpeaker, drawStar } from '../render/icons';
 import { chip, headline, hits, panel, screenBackground, type Rect } from '../render/ui';
 import { bestScore, saveMuted } from '../storage';
+import { currentStreak } from '../streak';
 import { UI } from '../theme';
 
 const MARGIN = 14;
@@ -85,11 +86,9 @@ export function drawMenu(): void {
   ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(255,246,228,0.55)';
   ctx.font = '600 10px sans-serif';
-  ctx.fillText(
-    next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : '全部模式和难度已解锁',
-    MARGIN,
-    60
-  );
+  const streak = currentStreak();
+  const progressText = next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : '全部模式和难度已解锁';
+  ctx.fillText(streak > 1 ? `连续 ${streak} 天 · ${progressText}` : progressText, MARGIN, 60);
 
   // Difficulty.
   DIFFICULTIES.forEach((difficulty, index) => {

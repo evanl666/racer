@@ -6,6 +6,8 @@ import { MODES, modeById } from './modes';
 import { clearSeed, setSeed } from './rng';
 import type { Difficulty, ModeDefinition, ModeId, RunState } from './modes/types';
 import { resetClock } from './clock';
+import { beginOnboarding } from './onboarding';
+import { touchStreak } from './streak';
 import { clearParticles } from './render/particles';
 import { resetFeel } from './feel';
 import { aiCars, player, resetGame } from './state';
@@ -55,6 +57,8 @@ export function startRun(modeId: ModeId, difficulty: Difficulty, daily?: DailyRu
   clearParticles();
   // However long the menu was open must not land on the first frame of the run.
   resetClock();
+  beginOnboarding();
+  touchStreak();
 
   run.modeId = modeId;
   run.difficulty = difficulty;

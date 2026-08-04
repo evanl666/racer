@@ -9,6 +9,7 @@ const { game, step, fire } = createGame();
 const { check, finish } = reporter();
 
 const THROTTLE = touch(1, 303, 774);
+const LEFT_BTN = touch(2, 58, 774);
 
 // --- the plan is a pure function of the date -------------------------------
 const a = game.dailyPlan('2026-08-04');
@@ -157,5 +158,41 @@ game.audio.setMuted(true);
 check('mute takes effect', game.audio.isMuted() === true);
 game.audio.setMuted(false);
 check('unmute takes effect', game.audio.isMuted() === false);
+
+// --- onboarding -------------------------------------------------------------
+// A first-time player must be told what the bottom of the screen does, and must
+// never be told twice.
+game.resetOnboarding();
+game.startMode('speed-monkey');
+check('onboarding shows on a first run', game.onboardingActive() === true);
+
+// Using both controls dismisses it.
+fire('start', [LEFT_BTN]);
+fire('end', [LEFT_BTN]);
+fire('start', [THROTTLE]);
+step(0.1);
+fire('cancel', [THROTTLE]);
+check('using both controls dismisses onboarding', game.onboardingActive() === false);
+
+game.startMode('speed-monkey');
+check('onboarding does not come back', game.onboardingActive() === false);
+
+// It also gives up on its own if the player does nothing.
+game.resetOnboarding();
+game.startMode('speed-monkey');
+check('onboarding returns after a reset', game.onboardingActive() === true);
+step(13);
+check('onboarding times out rather than nagging', game.onboardingActive() === false);
+
+// --- daily streak -----------------------------------------------------------
+// Consecutive days count up; a gap resets to one.
+check('a first visit starts a streak of one', game.touchStreak('2026-03-01').days === 1);
+check('the next day continues it', game.touchStreak('2026-03-02').days === 2);
+check('the same day does not double count', game.touchStreak('2026-03-02').days === 2);
+check('a missed day resets it', game.touchStreak('2026-03-05').days === 1);
+check('a broken chain reports zero', game.currentStreak('2026-03-20') === 0,
+  `${game.currentStreak('2026-03-20')}`);
+check('an unbroken chain still reports', game.currentStreak('2026-03-06') === 1,
+  `${game.currentStreak('2026-03-06')}`);
 
 finish();

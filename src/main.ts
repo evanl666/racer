@@ -23,6 +23,7 @@ import { frameDelta } from './clock';
 import { updateControlFlash } from './controls';
 import { consumeHitStop, shakeOffsetX, shakeOffsetY, updateFeel } from './feel';
 import { installInput, releaseAllPointers } from './input';
+import { updateOnboarding } from './onboarding';
 import { ctx, DPR, offsetX, offsetY, scale, scheduleFrame, VIEW_H, VIEW_W } from './platform';
 import { updatePlayer } from './player';
 import { drawControls, drawHud } from './render/hud';
@@ -41,6 +42,7 @@ import { loadMuted } from './storage';
 
 function stepRace(dt: number): void {
   updateControlFlash(dt);
+  updateOnboarding(dt);
   updateFeel(dt);
   updateParticles(dt);
 
@@ -146,6 +148,8 @@ export { dailyPlan, dailyStage, todayKey } from './daily';
 export { renderShareCard } from './shareCard';
 export { audio } from './audio';
 export { loadMuted, saveMuted } from './storage';
+export { onboardingActive, resetOnboarding } from './onboarding';
+export { currentStreak, touchStreak } from './streak';
 export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';

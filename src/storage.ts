@@ -127,6 +127,77 @@ export function saveMuted(muted: boolean): void {
   }
 }
 
+const ONBOARDED_KEY = 'harbor-loop-onboarded-v1';
+const STREAK_KEY = 'harbor-loop-streak-v1';
+
+function readFlag(key: string): string | null {
+  try {
+    const anyWx = wx as unknown as { getStorageSync?(key: string): unknown };
+    if (typeof anyWx.getStorageSync === 'function') {
+      const value = anyWx.getStorageSync(key);
+      return typeof value === 'string' && value ? value : null;
+    }
+  } catch (error) {
+    /* fall through */
+  }
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage.getItem(key);
+  } catch (error) {
+    /* unavailable */
+  }
+  return null;
+}
+
+function writeFlag(key: string, value: string): void {
+  try {
+    const anyWx = wx as unknown as { setStorageSync?(key: string, data: unknown): void };
+    if (typeof anyWx.setStorageSync === 'function') {
+      anyWx.setStorageSync(key, value);
+      return;
+    }
+  } catch (error) {
+    /* fall through */
+  }
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+  } catch (error) {
+    /* stays in memory for this session */
+  }
+}
+
+export function loadOnboarded(): boolean {
+  return readFlag(ONBOARDED_KEY) === '1';
+}
+
+export function saveOnboarded(done: boolean): void {
+  writeFlag(ONBOARDED_KEY, done ? '1' : '0');
+}
+
+export interface Streak {
+  /** Consecutive days with at least one run. */
+  days: number;
+  /** Last day counted, as YYYY-MM-DD. */
+  lastDay: string;
+}
+
+export function loadStreak(): Streak {
+  const raw = readFlag(STREAK_KEY);
+  if (!raw) return { days: 0, lastDay: '' };
+  try {
+    const parsed = JSON.parse(raw) as Partial<Streak>;
+    return {
+      days: typeof parsed.days === 'number' ? parsed.days : 0,
+      lastDay: typeof parsed.lastDay === 'string' ? parsed.lastDay : ''
+    };
+  } catch (error) {
+    return { days: 0, lastDay: '' };
+  }
+}
+
+export function saveStreak(streak: Streak): void {
+  writeFlag(STREAK_KEY, JSON.stringify(streak));
+}
+
 /** Total of every personal best, used as the single number for the friend ranking. */
 export function careerPoints(): number {
   return Object.entries(table()).reduce((total, [entryKey, value]) => {

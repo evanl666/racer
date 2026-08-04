@@ -8,7 +8,38 @@ export const canvas = wx.createCanvas();
 
 const context2d = canvas.getContext('2d');
 if (!context2d) throw new Error('2D canvas context is unavailable');
-export const ctx: CanvasRenderingContext2D = context2d;
+
+/**
+ * The active draw target. Every render helper imports this binding, so
+ * withRenderTarget() can point the whole render layer at an offscreen canvas
+ * without threading a context parameter through every function.
+ */
+export let ctx: CanvasRenderingContext2D = context2d;
+
+export function withRenderTarget(target: CanvasRenderingContext2D, draw: () => void): void {
+  const previous = ctx;
+  ctx = target;
+  try {
+    draw();
+  } finally {
+    ctx = previous;
+  }
+}
+
+/**
+ * In WeChat the first wx.createCanvas() is the display canvas and every later
+ * call returns an offscreen one; index.html's shim follows the same rule.
+ */
+export function createOffscreenCanvas(width: number, height: number): WxCanvas | null {
+  try {
+    const offscreen = wx.createCanvas();
+    offscreen.width = width;
+    offscreen.height = height;
+    return offscreen;
+  } catch (error) {
+    return null;
+  }
+}
 
 const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync!();
 

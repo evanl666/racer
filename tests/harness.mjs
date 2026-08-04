@@ -17,10 +17,11 @@ export function createGame() {
   const storage = new Map();
   let pendingFrame = null;
 
-  let canvasStub;
-  const ctxStub = new Proxy({}, {
+  const createdCanvases = [];
+
+  const makeCtxStub = (owner) => new Proxy({}, {
     get(target, prop) {
-      if (prop === 'canvas') return canvasStub;
+      if (prop === 'canvas') return owner;
       if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => ({ addColorStop: noop });
       if (prop === 'measureText') return () => ({ width: 10 });
       if (prop in target) return target[prop];
@@ -32,11 +33,17 @@ export function createGame() {
     }
   });
 
-  canvasStub = {
-    width: 0,
-    height: 0,
-    getContext: () => ctxStub
-    // No addEventListener on purpose: the real mini game canvas has none either.
+  // WeChat hands back the display canvas first and offscreen canvases after, so
+  // the stub must do the same or the cached track layer would draw onto itself.
+  const makeCanvas = () => {
+    const stub = {
+      width: 0,
+      height: 0
+      // No addEventListener on purpose: the real mini game canvas has none either.
+    };
+    stub.getContext = () => makeCtxStub(stub);
+    createdCanvases.push(stub);
+    return stub;
   };
 
   const sandbox = {
@@ -44,7 +51,7 @@ export function createGame() {
     setTimeout,
     requestAnimationFrame: (cb) => { pendingFrame = cb; return 1; },
     wx: {
-      createCanvas: () => canvasStub,
+      createCanvas: () => makeCanvas(),
       getWindowInfo: () => ({ windowWidth: 390, windowHeight: 844, pixelRatio: 2 }),
       vibrateShort: noop,
       onTouchStart: (fn) => { handlers.start = fn; },
@@ -84,6 +91,7 @@ export function createGame() {
     step,
     fire,
     storage,
+    canvasCount: () => createdCanvases.length,
     frameScheduled: () => pendingFrame !== null
   };
 }

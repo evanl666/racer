@@ -936,6 +936,25 @@ var HarborLoop = (() => {
   var context2d = canvas.getContext("2d");
   if (!context2d) throw new Error("2D canvas context is unavailable");
   var ctx = context2d;
+  function withRenderTarget(target, draw) {
+    const previous = ctx;
+    ctx = target;
+    try {
+      draw();
+    } finally {
+      ctx = previous;
+    }
+  }
+  function createOffscreenCanvas(width, height) {
+    try {
+      const offscreen = wx.createCanvas();
+      offscreen.width = width;
+      offscreen.height = height;
+      return offscreen;
+    } catch (error) {
+      return null;
+    }
+  }
   var windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
   var VIEW_W = windowInfo.windowWidth;
   var VIEW_H = windowInfo.windowHeight;
@@ -2962,6 +2981,54 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/render/staticLayer.ts
+  var layer = null;
+  var layerCtx = null;
+  var renderedTrack = null;
+  var unavailable = false;
+  function ensureLayer() {
+    if (unavailable) return false;
+    if (layer && layerCtx) return true;
+    layer = createOffscreenCanvas(Math.floor(VIEW_W * DPR), Math.floor(VIEW_H * DPR));
+    layerCtx = layer ? layer.getContext("2d") : null;
+    if (!layer || !layerCtx) {
+      unavailable = true;
+      return false;
+    }
+    return true;
+  }
+  function renderLayer(target) {
+    target.setTransform(DPR, 0, 0, DPR, 0, 0);
+    target.clearRect(0, 0, VIEW_W, VIEW_H);
+    target.save();
+    target.translate(offsetX, offsetY);
+    target.scale(scale, scale);
+    withRenderTarget(target, () => {
+      drawBackground();
+      drawTrack();
+    });
+    target.restore();
+  }
+  function drawStaticScene() {
+    if (!ensureLayer() || !layer || !layerCtx) {
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+      drawBackground();
+      drawTrack();
+      ctx.restore();
+      return;
+    }
+    if (renderedTrack !== activeTrackId) {
+      renderLayer(layerCtx);
+      renderedTrack = activeTrackId;
+    }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+  }
+
   // src/render/vehicles.ts
   var PLAYER_STYLE = {
     body: COLORS.player,
@@ -3173,13 +3240,16 @@ var HarborLoop = (() => {
     updateRun(dt);
   }
   function drawRace() {
-    drawBackground();
-    drawTrack();
+    drawStaticScene();
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
     drawHazardLane();
     drawCars();
     drawBlackout();
     drawHud();
     drawControls();
+    ctx.restore();
   }
   function frame(nowValue) {
     const now = typeof nowValue === "number" ? nowValue : Date.now();
@@ -3187,19 +3257,21 @@ var HarborLoop = (() => {
     lastTime = now;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scale, scale);
     if (app.screen === "PLAYING") {
       stepRace(dt);
       drawRace();
-    } else if (app.screen === "MENU") {
-      updateMenu(dt);
-      drawMenu();
     } else {
-      drawResult();
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+      if (app.screen === "MENU") {
+        updateMenu(dt);
+        drawMenu();
+      } else {
+        drawResult();
+      }
+      ctx.restore();
     }
-    ctx.restore();
     if (app.screen === "PLAYING" && runIsOver()) {
       releaseAllPointers();
       enterResultScreen();

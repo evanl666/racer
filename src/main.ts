@@ -25,8 +25,7 @@ import { ctx, DPR, offsetX, offsetY, scale, scheduleFrame, VIEW_H, VIEW_W } from
 import { updatePlayer } from './player';
 import { drawControls, drawHud } from './render/hud';
 import { drawBlackout, drawHazardLane } from './render/overlays';
-import { drawTrack } from './render/road';
-import { drawBackground } from './render/scenery';
+import { drawStaticScene } from './render/staticLayer';
 import { drawCars } from './render/vehicles';
 import { runIsOver, updateRun } from './run';
 import { drawMenu, updateMenu } from './screens/menu';
@@ -49,14 +48,19 @@ function stepRace(dt: number): void {
   updateRun(dt);
 }
 
+/** The static scene is blitted first, then only the moving parts are drawn. */
 function drawRace(): void {
-  drawBackground();
-  drawTrack();
+  drawStaticScene();
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
   drawHazardLane();
   drawCars();
   drawBlackout();
   drawHud();
   drawControls();
+  ctx.restore();
 }
 
 function frame(nowValue?: number): void {
@@ -66,21 +70,22 @@ function frame(nowValue?: number): void {
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  ctx.save();
-  ctx.translate(offsetX, offsetY);
-  ctx.scale(scale, scale);
 
   if (app.screen === 'PLAYING') {
     stepRace(dt);
     drawRace();
-  } else if (app.screen === 'MENU') {
-    updateMenu(dt);
-    drawMenu();
   } else {
-    drawResult();
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
+    if (app.screen === 'MENU') {
+      updateMenu(dt);
+      drawMenu();
+    } else {
+      drawResult();
+    }
+    ctx.restore();
   }
-
-  ctx.restore();
 
   // Transition after drawing, so the last frame of the run is shown once.
   if (app.screen === 'PLAYING' && runIsOver()) {

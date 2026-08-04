@@ -5,7 +5,7 @@
 
 import { createGame, reporter, touch } from './harness.mjs';
 
-const { game, step, fire } = createGame();
+const { game, step, fire, canvasCount } = createGame();
 const { check, finish } = reporter();
 
 const THROTTLE = touch(1, 303, 774);
@@ -131,6 +131,12 @@ check(
 check('Normal is no longer the old 18-car field', counts.normal >= 24, `cars=${counts.normal}`);
 check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 6));
 game.app.difficulty = 'normal';
+
+// The static scene is cached on an offscreen canvas, which must be a *second*
+// canvas; drawing the layer onto the display canvas would blank the frame.
+game.startMode('speed-monkey');
+step(0.1);
+check('an offscreen layer canvas is created', canvasCount() >= 2, `${canvasCount()} canvases`);
 
 // Circuits: every mode names a real one, and they are not all the same.
 const trackIds = new Set(game.MODES.map((mode) => mode.trackId));

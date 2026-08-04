@@ -1,5 +1,5 @@
 {
-  "description": "Harbor Loop V0.9.5 - trails, denser traffic and local BGM test",
+  "description": "Harbor Loop V0.9.6 - GitHub-safe build without local test music",
   "packOptions": {
     "ignore": []
   },
@@ -31,6 +31,6 @@
   "compileType": "game",
   "libVersion": "3.8.10",
   "appid": "touristappid",
-  "projectname": "harbor-loop-v0-9-5-local-test",
+  "projectname": "harbor-loop-v0-9-6-github-safe",
   "condition": {}
 }

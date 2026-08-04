@@ -1,5 +1,5 @@
 /**
- * Harbor Loop — WeChat Mini Game prototype v0.9.5.
+ * Harbor Loop — WeChat Mini Game prototype v0.9.6.
  *
  * Scope:
  * - One extra-long, smooth, non-crossing six-lane top-down circuit.
@@ -764,7 +764,9 @@ const audio = {
   disabled: false,
   masterGain: null,
   engineGain: null,
+  engineLowGain: null,
   engineFilter: null,
+  engineHighPass: null,
   engineLow: null,
   engineMid: null,
   engineHigh: null,
@@ -773,7 +775,7 @@ const audio = {
   engineNoise: null,
   engineNoiseFilter: null,
   engineNoiseGain: null,
-  smoothEngineFrequency: 48,
+  smoothEngineFrequency: 80,
   smoothEngineVolume: 0,
   smoothThrottle: 0,
   enginePulsePhase: 0,
@@ -802,10 +804,12 @@ const audio = {
       try {
         this.masterGain = this.context.createGain();
         this.engineGain = this.context.createGain();
+        this.engineLowGain = this.context.createGain();
         this.engineMidGain = this.context.createGain();
         this.engineHighGain = this.context.createGain();
         this.engineNoiseGain = this.context.createGain();
         this.engineFilter = this.context.createBiquadFilter();
+        this.engineHighPass = this.context.createBiquadFilter();
         this.engineNoiseFilter = this.context.createBiquadFilter();
         this.engineLow = this.context.createOscillator();
         this.engineMid = this.context.createOscillator();
@@ -814,27 +818,35 @@ const audio = {
 
         setAudioParam(this.masterGain.gain, 0.46);
         setAudioParam(this.engineGain.gain, 0.0001);
-        setAudioParam(this.engineMidGain.gain, 0.070);
-        setAudioParam(this.engineHighGain.gain, 0.018);
+        setAudioParam(this.engineLowGain.gain, 0.34);
+        setAudioParam(this.engineMidGain.gain, 0.086);
+        setAudioParam(this.engineHighGain.gain, 0.026);
         setAudioParam(this.engineNoiseGain.gain, 0.0001);
 
         try { this.engineFilter.type = 'lowpass'; } catch (error) { /* default filter */ }
-        setAudioParam(this.engineFilter.frequency, 520);
-        setAudioParam(this.engineFilter.Q, 0.72);
+        setAudioParam(this.engineFilter.frequency, 760);
+        setAudioParam(this.engineFilter.Q, 0.82);
+        // Trim sub-bass rumble so the engine reads as a faster arcade motor rather
+        // than a low idling truck. The low layer remains audible, but no longer
+        // dominates the mechanical mid and high harmonics.
+        try { this.engineHighPass.type = 'highpass'; } catch (error) { /* default filter */ }
+        setAudioParam(this.engineHighPass.frequency, 80);
+        setAudioParam(this.engineHighPass.Q, 0.58);
         try { this.engineNoiseFilter.type = 'bandpass'; } catch (error) { /* default filter */ }
-        setAudioParam(this.engineNoiseFilter.frequency, 720);
-        setAudioParam(this.engineNoiseFilter.Q, 0.85);
+        setAudioParam(this.engineNoiseFilter.frequency, 980);
+        setAudioParam(this.engineNoiseFilter.Q, 0.92);
 
         // Three detuned mechanical layers plus filtered noise avoid the single-note
         // synthesizer character of V0.9.3.
         try { this.engineLow.type = 'triangle'; } catch (error) { /* default sine */ }
         try { this.engineMid.type = 'sawtooth'; } catch (error) { /* default sine */ }
         try { this.engineHigh.type = 'triangle'; } catch (error) { /* default sine */ }
-        setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency);
-        setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * 2.02);
-        setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * 4.07);
+        setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency * 1.08);
+        setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * 2.22);
+        setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * 4.52);
 
-        this.engineLow.connect(this.engineFilter);
+        this.engineLow.connect(this.engineLowGain);
+        this.engineLowGain.connect(this.engineFilter);
         this.engineMid.connect(this.engineMidGain);
         this.engineMidGain.connect(this.engineFilter);
         this.engineHigh.connect(this.engineHighGain);
@@ -844,7 +856,8 @@ const audio = {
           this.engineNoiseFilter.connect(this.engineNoiseGain);
           this.engineNoiseGain.connect(this.engineGain);
         }
-        this.engineFilter.connect(this.engineGain);
+        this.engineFilter.connect(this.engineHighPass);
+        this.engineHighPass.connect(this.engineGain);
         this.engineGain.connect(this.masterGain);
         this.masterGain.connect(this.context.destination);
 
@@ -902,22 +915,23 @@ const audio = {
   },
 
   playOvertake(combo, count = 1) {
-    // Ordinary passes are feedback only; they no longer change the permanent speed.
-    const withinBlock = Math.max(0, combo - 1) % 10;
-    const notePattern = [0, 2, 3, 5, 7, 8, 10, 12, 10, 12];
-    const tier = Math.min(7, Math.floor(Math.max(0, combo - 1) / 10));
-    const semitones = notePattern[withinBlock] + tier * 0.34;
-    const baseFrequency = Math.min(760, 305 * Math.pow(2, semitones / 12));
-    const volume = Math.min(0.064, 0.046 + Math.max(0, count - 1) * 0.006);
-    this.effectDuck = Math.max(this.effectDuck, 0.25);
-    this.addTone('triangle', 0.070, baseFrequency * 0.95, baseFrequency, volume);
-    this.addTone('sine', 0.046, baseFrequency * 1.45, baseFrequency * 1.49, volume * 0.12);
+    // The pass tone now rises across the entire live combo. V0.9.5 restarted a
+    // ten-note pattern at x10/x20, which sounded like progress had been erased.
+    // A gentle continuous slope keeps every pass slightly higher, then caps the
+    // range before it becomes piercing during very long combos.
+    const passIndex = Math.max(0, combo - 1);
+    const semitones = Math.min(17.2, passIndex * 0.28);
+    const baseFrequency = Math.min(850, 325 * Math.pow(2, semitones / 12));
+    const volume = Math.min(0.062, 0.044 + Math.max(0, count - 1) * 0.006);
+    this.effectDuck = Math.max(this.effectDuck, 0.23);
+    this.addTone('triangle', 0.068, baseFrequency * 0.965, baseFrequency, volume);
+    this.addTone('sine', 0.044, baseFrequency * 1.38, baseFrequency * 1.43, volume * 0.11);
   },
 
   playSpeedTierUp(tier) {
     // A restrained mechanical surge marks x10/x20/... without becoming a melody.
-    const start = Math.min(250, 118 + tier * 9);
-    const end = Math.min(390, start * 1.42);
+    const start = Math.min(315, 158 + tier * 12);
+    const end = Math.min(455, start * 1.36);
     this.effectDuck = Math.max(this.effectDuck, 0.18);
     this.addTone('sawtooth', 0.145, start, end, 0.036);
     this.addTone('triangle', 0.110, start * 1.95, end * 1.74, 0.018);
@@ -930,7 +944,7 @@ const audio = {
     // band, while every ten overtakes raises the whole band slightly. Real road
     // speed still changes continuously, but the long-term engine pitch is stepped.
     const tier = currentSpeedTier();
-    const tierMultiplier = [1.00, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 1.415, 1.445, 1.47][tier];
+    const tierMultiplier = [1.00, 1.075, 1.15, 1.225, 1.30, 1.375, 1.45, 1.525, 1.595, 1.66, 1.72][tier];
 
     const throttleTarget = inputState.throttle && player.state !== 'CRASHED' ? 1 : 0;
     const throttleResponse = throttleTarget > this.smoothThrottle ? 8.0 : 4.6;
@@ -944,8 +958,8 @@ const audio = {
       1
     );
     const revAmount = clamp(this.smoothThrottle * 0.74 + speedInsideBand * 0.26, 0, 1);
-    let targetFrequency = 48 * tierMultiplier * (1 + revAmount * 0.26);
-    if (player.state === 'CRASHED') targetFrequency = 36;
+    let targetFrequency = 80 * tierMultiplier * (1 + revAmount * 0.34);
+    if (player.state === 'CRASHED') targetFrequency = 52;
     if (player.state === 'RECOVERING') targetFrequency *= 0.82;
 
     // About 0.3 s of smoothing makes x10/x20/x30 sound like a change in engine
@@ -959,22 +973,24 @@ const audio = {
     if (player.state === 'RECOVERING') targetVolume *= 0.72;
     this.smoothEngineVolume += (targetVolume - this.smoothEngineVolume) * (1 - Math.exp(-dt * 8));
 
-    const pulseRate = 7.2 + tier * 0.72 + revAmount * 6.4;
+    const pulseRate = 9.0 + tier * 0.86 + revAmount * 7.4;
     this.enginePulsePhase = (this.enginePulsePhase + dt * pulseRate) % 1;
     const pulseWave = Math.max(0, Math.sin(this.enginePulsePhase * Math.PI * 2));
     const pulse = 0.82 + Math.pow(pulseWave, 3.2) * 0.18;
     this.effectDuck = Math.max(0, this.effectDuck - dt * 3.6);
     const duck = 1 - this.effectDuck * 0.28;
 
-    setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency);
-    setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * (2.01 + revAmount * 0.035));
-    setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * (4.03 + revAmount * 0.11));
-    setAudioParam(this.engineMidGain.gain, 0.052 + revAmount * 0.035 + speedRatio * 0.010);
-    setAudioParam(this.engineHighGain.gain, 0.012 + revAmount * 0.018);
+    setAudioParam(this.engineLow.frequency, this.smoothEngineFrequency * 1.08);
+    setAudioParam(this.engineMid.frequency, this.smoothEngineFrequency * (2.20 + revAmount * 0.080));
+    setAudioParam(this.engineHigh.frequency, this.smoothEngineFrequency * (4.45 + revAmount * 0.18));
+    setAudioParam(this.engineLowGain.gain, 0.30 + (1 - revAmount) * 0.055);
+    setAudioParam(this.engineMidGain.gain, 0.078 + revAmount * 0.052 + speedRatio * 0.014);
+    setAudioParam(this.engineHighGain.gain, 0.022 + revAmount * 0.030 + speedRatio * 0.008);
     setAudioParam(this.engineGain.gain, this.smoothEngineVolume * pulse * duck);
-    setAudioParam(this.engineFilter.frequency, 330 + tier * 46 + revAmount * 740 + speedRatio * 260);
-    setAudioParam(this.engineNoiseFilter.frequency, 560 + tier * 65 + revAmount * 920 + speedRatio * 380);
-    setAudioParam(this.engineNoiseGain.gain, (0.003 + revAmount * 0.010 + speedRatio * 0.009) * duck);
+    setAudioParam(this.engineHighPass.frequency, 80 + tier * 3.0 + revAmount * 24);
+    setAudioParam(this.engineFilter.frequency, 620 + tier * 68 + revAmount * 1080 + speedRatio * 430);
+    setAudioParam(this.engineNoiseFilter.frequency, 900 + tier * 82 + revAmount * 1180 + speedRatio * 460);
+    setAudioParam(this.engineNoiseGain.gain, (0.0025 + revAmount * 0.012 + speedRatio * 0.011) * duck);
 
     for (let index = this.voices.length - 1; index >= 0; index--) {
       const voice = this.voices[index];

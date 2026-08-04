@@ -1,10 +1,10 @@
 /**
- * Harbor Loop — WeChat Mini Game prototype v0.9.4.
+ * Harbor Loop — WeChat Mini Game prototype v0.9.5.
  *
  * Scope:
  * - One extra-long, smooth, non-crossing six-lane top-down circuit.
  * - Instant left/right lane switching anywhere on the track.
- * - Fourteen slower black AI cars with readable lane changes.
+ * - Twenty-one slower black AI cars with readable lane changes.
  * - AI lane changes are blocked inside a speed-scaled player safety zone.
  * - Overtake -> combo +1; every ten overtakes triggers a permanent speed tier.
  * - Collision -> speed 0, combo reset, flash, recover to base speed.
@@ -13,6 +13,8 @@
  * - Hold Up / W / Space for throttle; release to coast back to cruise speed.
  * - Engine RPM and real road speed step up every ten overtakes.
  * - Procedural engine, lane-change and overtake audio via WebAudio.
+ * - Optional local-only looping background music for private gameplay testing.
+ * - Speed-scaled motion afterimages for the player and subtle high-speed AI ghosts.
  */
 
 const canvas = wx.createCanvas();
@@ -91,6 +93,16 @@ const AI_PLAYER_SAFETY_PER_SPEED = 0.39;
 const AI_PLAYER_REAR_SAFETY_DISTANCE = 30;
 const COLLISION_PATH_DISTANCE = 11.5;
 const COLLISION_LANE_DISTANCE = 0.48;
+
+// Motion trails stay invisible at opening speed, then build progressively as the
+// red car enters the high-speed tiers. History-based samples preserve the real
+// curve and lane-change path instead of drawing a straight fake blur.
+const PLAYER_TRAIL_START_SPEED = 215;
+const PLAYER_TRAIL_FULL_SPEED = 590;
+const PLAYER_TRAIL_MAX_COPIES = 5;
+const AI_TRAIL_PLAYER_SPEED_START = 430;
+const MOTION_TRAIL_MAX_AGE = 0.16;
+const MOTION_TRAIL_MAX_SAMPLES = 10;
 
 
 // Long Bay Circuit: an original folded circuit built from exact lines and arcs.
@@ -503,6 +515,53 @@ function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection =
   ctx.restore();
 }
 
+function drawVehicleGhost(distance, laneIndex, style, alpha, stretch = 0) {
+  if (alpha <= 0.001) return;
+  const p = sampleAtDistance(distance, laneIndex);
+  const extraLength = 4.8 * stretch;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.angle);
+
+  // A simplified body silhouette reads as speed without making every old copy
+  // look like another solid car. It is stretched only along the travel axis.
+  ctx.fillStyle = style.body;
+  roundRect(ctx, -7.8 - extraLength, -3.7, 15.6 + extraLength, 7.4, 2.7);
+  ctx.fill();
+
+  ctx.fillStyle = style.cabin;
+  roundRect(ctx, -3.0, -2.7, 6.3, 5.4, 1.7);
+  ctx.fill();
+
+  if (style.stripe) {
+    ctx.fillStyle = style.stripe;
+    roundRect(ctx, -6.7 - extraLength * 0.45, -0.45, 10.4 + extraLength * 0.45, 0.9, 0.45);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMotionTrail(samples, style, strength, maxCopies, alphaScale) {
+  if (!samples || samples.length === 0 || strength <= 0.01) return;
+  const copies = Math.min(
+    maxCopies,
+    samples.length,
+    Math.max(1, Math.ceil(strength * maxCopies))
+  );
+
+  // Draw the oldest copy first. At high speed each successive frame naturally
+  // sits farther apart, so the trail length scales with actual road speed.
+  for (let copy = copies - 1; copy >= 0; copy--) {
+    const sampleIndex = Math.min(samples.length - 1, copy + 1);
+    const sample = samples[sampleIndex];
+    const ageFade = 1 - clamp(sample.age / MOTION_TRAIL_MAX_AGE, 0, 1);
+    const copyFade = 1 - copy / Math.max(1, copies + 0.5);
+    const alpha = alphaScale * strength * ageFade * copyFade;
+    drawVehicleGhost(sample.distance, sample.visualLane, style, alpha, strength);
+  }
+}
+
 const PLAYER_STYLE = {
   body: COLORS.player,
   cabin: COLORS.playerLight,
@@ -519,7 +578,9 @@ const AI_STYLE = {
   stripe: null
 };
 
-// Procedural audio: no copyrighted samples and no external sound files.
+// Procedural engine/effect audio remains generated at runtime. The optional test
+// BGM is loaded from assets/local/test_bgm.mp3, which is intentionally ignored by
+// Git and may be absent in a public checkout without affecting gameplay.
 // WeChat Mini Game uses wx.createWebAudioContext when available; browser preview
 // falls back to the standard AudioContext implementation supplied by index.html.
 function clamp(value, min, max) {
@@ -581,6 +642,120 @@ function createLoopingNoiseSource(context) {
   } catch (error) {
     return null;
   }
+}
+
+
+const LOCAL_TEST_BGM_PATH = 'assets/local/test_bgm.mp3';
+const LOCAL_TEST_BGM_VOLUME = 0.17;
+
+const backgroundMusic = {
+  player: null,
+  kind: null,
+  attempted: false,
+  started: false,
+  wanted: true,
+  pausedByLifecycle: false,
+  disabled: false,
+
+  createPlayer() {
+    if (this.player || this.disabled) return this.player;
+
+    // Native WeChat Mini Game path. InnerAudioContext is intended for longer
+    // streaming audio such as BGM and supports loop/volume controls.
+    if (typeof wx !== 'undefined' && typeof wx.createInnerAudioContext === 'function') {
+      try {
+        const player = wx.createInnerAudioContext();
+        player.src = LOCAL_TEST_BGM_PATH;
+        player.loop = true;
+        player.autoplay = false;
+        player.volume = LOCAL_TEST_BGM_VOLUME;
+        if ('obeyMuteSwitch' in player) player.obeyMuteSwitch = true;
+        if (typeof player.onPlay === 'function') player.onPlay(() => { this.started = true; });
+        if (typeof player.onError === 'function') {
+          player.onError(() => {
+            // Public Git checkouts intentionally omit the local music file.
+            this.disabled = true;
+            this.started = false;
+          });
+        }
+        this.player = player;
+        this.kind = 'wechat';
+        return player;
+      } catch (error) { /* browser fallback below */ }
+    }
+
+    // Browser preview path. Playback still begins only after a user gesture.
+    if (typeof globalThis !== 'undefined' && typeof globalThis.Audio === 'function') {
+      try {
+        const player = new globalThis.Audio(LOCAL_TEST_BGM_PATH);
+        player.loop = true;
+        player.preload = 'auto';
+        player.volume = LOCAL_TEST_BGM_VOLUME;
+        player.addEventListener('play', () => { this.started = true; });
+        player.addEventListener('error', () => {
+          this.disabled = true;
+          this.started = false;
+        });
+        this.player = player;
+        this.kind = 'browser';
+        return player;
+      } catch (error) { /* music stays disabled */ }
+    }
+
+    this.disabled = true;
+    return null;
+  },
+
+  ensureStarted() {
+    if (!this.wanted || this.disabled) return false;
+    const player = this.createPlayer();
+    if (!player) return false;
+    this.attempted = true;
+
+    try {
+      const result = player.play();
+      if (result && typeof result.then === 'function') {
+        result.then(() => { this.started = true; }).catch(() => {
+          // A later key/touch gesture can retry if the browser blocked this one.
+          this.started = false;
+        });
+      } else {
+        this.started = true;
+      }
+      return true;
+    } catch (error) {
+      this.started = false;
+      return false;
+    }
+  },
+
+  toggle() {
+    this.wanted = !this.wanted;
+    if (this.wanted) {
+      this.ensureStarted();
+    } else if (this.player && typeof this.player.pause === 'function') {
+      try { this.player.pause(); } catch (error) { /* best effort */ }
+      this.started = false;
+    }
+  },
+
+  pauseForLifecycle() {
+    if (!this.player || !this.started || typeof this.player.pause !== 'function') return;
+    this.pausedByLifecycle = true;
+    try { this.player.pause(); } catch (error) { /* best effort */ }
+    this.started = false;
+  },
+
+  resumeForLifecycle() {
+    if (!this.pausedByLifecycle) return;
+    this.pausedByLifecycle = false;
+    if (this.wanted) this.ensureStarted();
+  }
+};
+
+function ensureGameAudioStarted() {
+  audio.ensureStarted();
+  backgroundMusic.ensureStarted();
 }
 
 const audio = {
@@ -852,7 +1027,12 @@ const AI_BLUEPRINTS = [
   { fraction: 0.88, lane: 4, speed: 112 },
   { fraction: 0.31, lane: 5, speed: 116 },
   { fraction: 0.64, lane: 5, speed: 120 },
-  { fraction: 0.97, lane: 5, speed: 118 }
+  { fraction: 0.97, lane: 5, speed: 118 },
+  // V0.9.5 adds only three cars: enough to make the full-track view feel busier
+  // without turning every lane into a continuous wall.
+  { fraction: 0.895, lane: 0, speed: 90 },
+  { fraction: 0.42, lane: 2, speed: 101 },
+  { fraction: 0.71, lane: 4, speed: 113 }
 ];
 
 const inputState = {
@@ -877,7 +1057,8 @@ const player = {
   tierBoostElapsed: 0,
   previousDistance: 0,
   previousVisualLane: 2,
-  collisionCount: 0
+  collisionCount: 0,
+  trail: []
 };
 
 let aiCars = [];
@@ -902,6 +1083,7 @@ function resetGame() {
   player.previousDistance = player.distance;
   player.previousVisualLane = player.visualLane;
   player.collisionCount = 0;
+  player.trail = [];
 
   aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
     const distance = arc.total * blueprint.fraction;
@@ -920,7 +1102,8 @@ function resetGame() {
       stateElapsed: 0,
       direction: 0,
       decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
-      passIndex: Math.floor((player.distance - distance) / arc.total)
+      passIndex: Math.floor((player.distance - distance) / arc.total),
+      trail: []
     };
   });
 }
@@ -932,7 +1115,7 @@ function laneInputStateAllows() {
 function requestLaneChange(direction) {
   if (!laneInputStateAllows()) return;
 
-  audio.ensureStarted();
+  ensureGameAudioStarted();
   const target = Math.max(0, Math.min(LANE_COUNT - 1, player.lane + direction));
   if (target === player.lane) return;
 
@@ -948,7 +1131,7 @@ function requestLaneChange(direction) {
 
 function setThrottle(active) {
   inputState.throttle = Boolean(active);
-  if (inputState.throttle) audio.ensureStarted();
+  if (inputState.throttle) ensureGameAudioStarted();
 }
 
 function inputAtScreenPoint(screenX, screenY) {
@@ -983,6 +1166,9 @@ function handleKeyboardInput(event) {
     handled = true;
   } else if (isThrottleKey(event)) {
     setThrottle(true);
+    handled = true;
+  } else if (key === 'm' || code === 'KeyM' || keyCode === 77) {
+    backgroundMusic.toggle();
     handled = true;
   } else if (key === 'r' || code === 'KeyR' || keyCode === 82) {
     resetGame();
@@ -1054,6 +1240,27 @@ function moveToward(value, target, maxDelta) {
   return target;
 }
 
+function updateMotionTrail(entity, dt, shouldRecord = true) {
+  if (!entity.trail) entity.trail = [];
+
+  for (const sample of entity.trail) sample.age += dt;
+  entity.trail = entity.trail.filter((sample) => sample.age <= MOTION_TRAIL_MAX_AGE);
+
+  if (!shouldRecord) {
+    entity.trail.length = 0;
+    return;
+  }
+
+  entity.trail.unshift({
+    distance: entity.previousDistance,
+    visualLane: entity.previousVisualLane,
+    age: 0
+  });
+  if (entity.trail.length > MOTION_TRAIL_MAX_SAMPLES) {
+    entity.trail.length = MOTION_TRAIL_MAX_SAMPLES;
+  }
+}
+
 function beginCollision() {
   if (player.invincible > 0 || player.state === 'CRASHED') return;
 
@@ -1064,6 +1271,7 @@ function beginCollision() {
   player.combo = 0;
   player.tierBoostElapsed = 0;
   player.collisionCount += 1;
+  player.trail.length = 0;
 
   if (typeof wx.vibrateShort === 'function') {
     try { wx.vibrateShort({ type: 'medium' }); } catch (error) { /* browser/test shim */ }
@@ -1114,6 +1322,7 @@ function updatePlayer(dt) {
 
   // Keep an unwrapped distance for reliable lap/overtake detection.
   player.distance = advanceDistanceAtRoadSpeed(player.distance, player.speed, dt, player.visualLane);
+  updateMotionTrail(player, dt, player.state !== 'CRASHED' && player.speed > PLAYER_TRAIL_START_SPEED);
 }
 
 function forwardPathDistance(fromDistance, toDistance) {
@@ -1243,6 +1452,7 @@ function updateAi(dt) {
     const response = Math.min(1, dt * 4.5);
     car.speed += (desiredSpeed - car.speed) * response;
     car.distance = advanceDistanceAtRoadSpeed(car.distance, car.speed, dt, car.visualLane);
+    updateMotionTrail(car, dt, true);
   }
 }
 
@@ -1314,6 +1524,26 @@ function playerAlpha() {
 }
 
 function drawCars() {
+  const playerTrailStrength = clamp(
+    (player.speed - PLAYER_TRAIL_START_SPEED) /
+      Math.max(1, PLAYER_TRAIL_FULL_SPEED - PLAYER_TRAIL_START_SPEED),
+    0,
+    1
+  );
+
+  // Black traffic gets only one extremely faint historical copy at the highest
+  // player speeds. The red car remains the visual focus with up to five copies.
+  const aiTrailStrength = clamp(
+    (player.speed - AI_TRAIL_PLAYER_SPEED_START) /
+      Math.max(1, PLAYER_MAX_SPEED - AI_TRAIL_PLAYER_SPEED_START),
+    0,
+    1
+  );
+  if (aiTrailStrength > 0.01) {
+    for (const car of aiCars) drawMotionTrail(car.trail, AI_STYLE, aiTrailStrength, 1, 0.055);
+  }
+  drawMotionTrail(player.trail, PLAYER_STYLE, playerTrailStrength, PLAYER_TRAIL_MAX_COPIES, 0.24);
+
   for (const car of aiCars) drawAiCar(car);
   drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
 }
@@ -1382,7 +1612,13 @@ const scheduleFrame = typeof requestAnimationFrame === 'function'
 resetGame();
 installInput();
 
-if (typeof wx.onHide === 'function') wx.onHide(() => audio.suspend());
-if (typeof wx.onShow === 'function') wx.onShow(() => audio.resume());
+if (typeof wx.onHide === 'function') wx.onHide(() => {
+  audio.suspend();
+  backgroundMusic.pauseForLifecycle();
+});
+if (typeof wx.onShow === 'function') wx.onShow(() => {
+  audio.resume();
+  backgroundMusic.resumeForLifecycle();
+});
 
 scheduleFrame(frame);

@@ -1,15 +1,39 @@
 {
-  "description": "Harbor Loop V0.9.6 - TypeScript source split into modules",
+  "description": "Harbor Loop V0.10.0 - 16 modes, mode select, friend leaderboard",
   "packOptions": {
     "ignore": [
-      { "type": "folder", "value": "node_modules" },
-      { "type": "folder", "value": "src" },
-      { "type": "folder", "value": "scripts" },
-      { "type": "folder", "value": "tests" },
-      { "type": "file", "value": "index.html" },
-      { "type": "file", "value": "package.json" },
-      { "type": "file", "value": "package-lock.json" },
-      { "type": "file", "value": "tsconfig.json" }
+      {
+        "type": "folder",
+        "value": "node_modules"
+      },
+      {
+        "type": "folder",
+        "value": "src"
+      },
+      {
+        "type": "folder",
+        "value": "scripts"
+      },
+      {
+        "type": "folder",
+        "value": "tests"
+      },
+      {
+        "type": "file",
+        "value": "index.html"
+      },
+      {
+        "type": "file",
+        "value": "package.json"
+      },
+      {
+        "type": "file",
+        "value": "package-lock.json"
+      },
+      {
+        "type": "file",
+        "value": "tsconfig.json"
+      }
     ],
     "include": []
   },
@@ -52,7 +76,7 @@
   "compileType": "game",
   "libVersion": "3.8.10",
   "appid": "touristappid",
-  "projectname": "harbor-loop-v0-9-6",
+  "projectname": "harbor-loop-v0-10-0",
   "condition": {},
   "simulatorPluginLibVersion": {},
   "isGameTourist": false,

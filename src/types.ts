@@ -32,6 +32,12 @@ export interface Player {
   previousDistance: number;
   previousVisualLane: number;
   collisionCount: number;
+  /** Seconds of fireball left. While positive, contact destroys cars instead of crashing. */
+  fireball: number;
+  /** Throttle heat, 0..1. Only Hot Rods lets it reach 1, which forces a blowout. */
+  heat: number;
+  /** Road distance covered this run, used by the distance-scored modes. */
+  travelled: number;
 }
 
 export interface AiCar {
@@ -50,6 +56,14 @@ export interface AiCar {
   direction: number;
   decisionTimer: number;
   passIndex: number;
+  /** Destroyed cars stop updating and stop being drawn. */
+  alive: boolean;
+  /** Seconds of wreck animation left after being destroyed. */
+  wreck: number;
+  /** In The Zone: this car carries a slipstream zone the player must sit inside. */
+  hasZone: boolean;
+  /** In The Zone: 0..1 progress filling this car's zone. */
+  zoneFill: number;
 }
 
 export interface AiBlueprint {

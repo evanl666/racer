@@ -1,4 +1,9 @@
-/** Collision and overtake detection — the rules that turn driving into a score. */
+/**
+ * Contact and overtake detection.
+ *
+ * The geometry is fixed, but what a contact *means* is the mode's decision:
+ * a crash, a kill, or nothing at all.
+ */
 
 import { audio } from './audio';
 import {
@@ -8,13 +13,35 @@ import {
 } from './config';
 import { vibrate } from './platform';
 import { beginCollision } from './player';
+import { activeMode, run } from './run';
 import { aiCars, currentSpeedTier, player } from './state';
 import { arc, circularDistance } from './track';
+import type { AiCar } from './types';
+
+const WRECK_SECONDS = 0.9;
+
+function destroyCar(car: AiCar): void {
+  car.alive = false;
+  car.wreck = WRECK_SECONDS;
+  car.hasZone = false;
+  run.destroyed += 1;
+  audio.playSpeedTierUp(Math.min(7, 2 + run.destroyed));
+  vibrate('medium');
+  activeMode.onDestroy?.(car, run);
+}
+
+function crash(): void {
+  beginCollision();
+  run.crashes += 1;
+  activeMode.onCrash?.(run);
+}
 
 export function detectCollisions(): boolean {
   if (player.invincible > 0 || player.state === 'CRASHED') return false;
 
   for (const car of aiCars) {
+    if (!car.alive) continue;
+
     const laneDistanceNow = Math.abs(player.visualLane - car.visualLane);
     const laneDistanceBefore = Math.abs(player.previousVisualLane - car.previousVisualLane);
     const laneDistance = Math.min(laneDistanceNow, laneDistanceBefore);
@@ -28,17 +55,28 @@ export function detectCollisions(): boolean {
     const currentPassIndex = Math.floor(currentGap / arc.total);
     const sweptThroughCar = currentPassIndex > previousPassIndex;
 
-    if (laneDistance <= COLLISION_LANE_DISTANCE &&
-        (pathDistance <= COLLISION_PATH_DISTANCE || sweptThroughCar)) {
-      beginCollision();
-      return true;
+    const touching = laneDistance <= COLLISION_LANE_DISTANCE &&
+      (pathDistance <= COLLISION_PATH_DISTANCE || sweptThroughCar);
+    if (!touching) continue;
+
+    const response = activeMode.onContact?.(car, run) ?? 'crash';
+    if (response === 'ignore') continue;
+    if (response === 'destroy') {
+      destroyCar(car);
+      // Ramming does not end anything, so keep scanning for further contacts.
+      continue;
     }
+
+    crash();
+    return true;
   }
   return false;
 }
 
 export function detectOvertakes(): void {
   for (const car of aiCars) {
+    if (!car.alive) continue;
+
     const currentPassIndex = Math.floor((player.distance - car.distance) / arc.total);
     if (currentPassIndex > car.passIndex) {
       const overtakes = currentPassIndex - car.passIndex;
@@ -58,6 +96,7 @@ export function detectOvertakes(): void {
       }
 
       vibrate(newTier > previousTier ? 'medium' : 'light');
+      activeMode.onOvertake?.(overtakes, run);
     } else if (currentPassIndex < car.passIndex) {
       // This can happen after a crash lets the AI move back in front.
       // Lowering the index allows the same car to be legitimately passed again.

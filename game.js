@@ -9,7 +9,7 @@ var HarborLoop = (() => {
   var __getOwnPropSymbols = Object.getOwnPropertySymbols;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __propIsEnum = Object.prototype.propertyIsEnumerable;
-  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __defNormalProp = (obj, key2, value) => key2 in obj ? __defProp(obj, key2, { enumerable: true, configurable: true, writable: true, value }) : obj[key2] = value;
   var __spreadValues = (a, b) => {
     for (var prop in b || (b = {}))
       if (__hasOwnProp.call(b, prop))
@@ -28,9 +28,9 @@ var HarborLoop = (() => {
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+      for (let key2 of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key2) && key2 !== except)
+          __defProp(to, key2, { get: () => from[key2], enumerable: !(desc = __getOwnPropDesc(from, key2)) || desc.enumerable });
     }
     return to;
   };
@@ -39,12 +39,19 @@ var HarborLoop = (() => {
   // src/main.ts
   var main_exports = {};
   __export(main_exports, {
+    MODES: () => MODES,
     aiCars: () => aiCars,
+    app: () => app,
+    bestScore: () => bestScore,
+    careerPoints: () => careerPoints,
     debugPointerCount: () => debugPointerCount,
     inputState: () => inputState,
     laneButtonFlash: () => laneButtonFlash,
+    openMenu: () => openMenu,
     player: () => player,
-    resetGame: () => resetGame
+    retryRun: () => retryRun,
+    run: () => run,
+    startMode: () => startMode
   });
 
   // src/config.ts
@@ -92,6 +99,30 @@ var HarborLoop = (() => {
     { fraction: 0.64, lane: 5, speed: 120 },
     { fraction: 0.97, lane: 5, speed: 118 }
   ];
+
+  // src/difficulty.ts
+  var DIFFICULTY_SCALE = {
+    normal: 1,
+    turbo: 1.25,
+    master: 1.5
+  };
+  var DIFFICULTY_LABEL = {
+    normal: "NORMAL",
+    turbo: "TURBO",
+    master: "MASTER"
+  };
+  var DIFFICULTIES = ["normal", "turbo", "master"];
+  var tuning = {
+    /** Multiplies every player speed target. */
+    player: 1,
+    /** Multiplies every AI base speed. Mode traffic scaling is folded in here. */
+    traffic: 1
+  };
+  function applyTuning(difficulty, trafficScale) {
+    const scale2 = DIFFICULTY_SCALE[difficulty];
+    tuning.player = scale2;
+    tuning.traffic = scale2 * trafficScale;
+  }
 
   // src/track.ts
   function buildLongBayCircuit() {
@@ -286,7 +317,10 @@ var HarborLoop = (() => {
     tierBoostElapsed: 0,
     previousDistance: 0,
     previousVisualLane: STARTING_LANE,
-    collisionCount: 0
+    collisionCount: 0,
+    fireball: 0,
+    heat: 0,
+    travelled: 0
   };
   var aiCars = [];
   function resetGame() {
@@ -296,7 +330,7 @@ var HarborLoop = (() => {
     player.laneFrom = STARTING_LANE;
     player.laneTo = STARTING_LANE;
     player.laneChangeElapsed = 0;
-    player.speed = PLAYER_CRUISE_BASE_SPEED;
+    player.speed = baseCruiseSpeed();
     inputState.throttle = false;
     player.state = "NORMAL";
     player.stateElapsed = 0;
@@ -309,8 +343,12 @@ var HarborLoop = (() => {
     player.previousDistance = player.distance;
     player.previousVisualLane = player.visualLane;
     player.collisionCount = 0;
+    player.fireball = 0;
+    player.heat = 0;
+    player.travelled = 0;
     aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
       const distance = arc.total * blueprint.fraction;
+      const baseSpeed = blueprint.speed * tuning.traffic;
       return {
         id: index,
         distance,
@@ -318,26 +356,33 @@ var HarborLoop = (() => {
         visualLane: blueprint.lane,
         laneFrom: blueprint.lane,
         laneTo: blueprint.lane,
-        baseSpeed: blueprint.speed,
-        speed: blueprint.speed,
+        baseSpeed,
+        speed: baseSpeed,
         previousDistance: distance,
         previousVisualLane: blueprint.lane,
         state: "IDLE",
         stateElapsed: 0,
         direction: 0,
         decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
-        passIndex: Math.floor((player.distance - distance) / arc.total)
+        passIndex: Math.floor((player.distance - distance) / arc.total),
+        alive: true,
+        wreck: 0,
+        hasZone: false,
+        zoneFill: 0
       };
     });
+  }
+  function baseCruiseSpeed() {
+    return PLAYER_CRUISE_BASE_SPEED * tuning.player;
   }
   function currentSpeedTier(combo = player.combo) {
     return Math.min(SPEED_TIER_CRUISE.length - 1, Math.floor(Math.max(0, combo) / 10));
   }
   function currentCruiseSpeed() {
-    return SPEED_TIER_CRUISE[currentSpeedTier()];
+    return SPEED_TIER_CRUISE[currentSpeedTier()] * tuning.player;
   }
   function currentThrottleMaxSpeed() {
-    return SPEED_TIER_THROTTLE[currentSpeedTier()];
+    return SPEED_TIER_THROTTLE[currentSpeedTier()] * tuning.player;
   }
   function currentTargetSpeed() {
     return inputState.throttle ? currentThrottleMaxSpeed() : currentCruiseSpeed();
@@ -349,14 +394,14 @@ var HarborLoop = (() => {
       speed: player.speed,
       cruiseSpeed: currentCruiseSpeed(),
       throttleMaxSpeed: currentThrottleMaxSpeed(),
-      maxSpeed: PLAYER_MAX_SPEED,
+      maxSpeed: PLAYER_MAX_SPEED * tuning.player,
       state: player.state
     };
   }
 
   // src/ai.ts
   function currentAiPlayerSafetyDistance() {
-    const speedExtra = Math.max(0, player.speed - PLAYER_CRUISE_BASE_SPEED) * AI_PLAYER_SAFETY_PER_SPEED;
+    const speedExtra = Math.max(0, player.speed - baseCruiseSpeed()) * AI_PLAYER_SAFETY_PER_SPEED;
     return Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
   }
   function playerIsApproachingAi(car) {
@@ -368,7 +413,7 @@ var HarborLoop = (() => {
   function countActiveAiLaneChanges() {
     let count = 0;
     for (const car of aiCars) {
-      if (car.state === "WARNING" || car.state === "CHANGING") count += 1;
+      if (car.alive && (car.state === "WARNING" || car.state === "CHANGING")) count += 1;
     }
     return count;
   }
@@ -376,7 +421,7 @@ var HarborLoop = (() => {
     let nearest = null;
     let nearestDistance = maxDistance;
     for (const other of aiCars) {
-      if (other === car || Math.abs(other.visualLane - lane) > 0.55) continue;
+      if (other === car || !other.alive || Math.abs(other.visualLane - lane) > 0.55) continue;
       const distance = forwardPathDistance(car.distance, other.distance);
       if (distance > 0.1 && distance < nearestDistance) {
         nearest = other;
@@ -387,7 +432,7 @@ var HarborLoop = (() => {
   }
   function isAiTargetLaneClear(car, targetLane) {
     for (const other of aiCars) {
-      if (other === car || Math.abs(other.visualLane - targetLane) > 0.62) continue;
+      if (other === car || !other.alive || Math.abs(other.visualLane - targetLane) > 0.62) continue;
       if (circularDistance(car.distance, other.distance) < AI_LANE_CLEAR_DISTANCE) return false;
     }
     if (Math.abs(player.visualLane - targetLane) < 0.72 && circularDistance(car.distance, player.distance) < currentAiPlayerSafetyDistance()) {
@@ -420,6 +465,10 @@ var HarborLoop = (() => {
   }
   function updateAi(dt) {
     for (const car of aiCars) {
+      if (!car.alive) {
+        car.wreck = Math.max(0, car.wreck - dt);
+        continue;
+      }
       car.previousDistance = car.distance;
       car.previousVisualLane = car.visualLane;
       car.decisionTimer -= dt;
@@ -461,6 +510,248 @@ var HarborLoop = (() => {
       car.distance = advanceDistanceAtRoadSpeed(car.distance, car.speed, dt, car.visualLane);
     }
   }
+
+  // src/leaderboard.ts
+  var openDataContext = null;
+  var openDataChecked = false;
+  function context() {
+    if (openDataChecked) return openDataContext;
+    openDataChecked = true;
+    const api = wx;
+    if (typeof api.getOpenDataContext === "function") {
+      try {
+        openDataContext = api.getOpenDataContext();
+      } catch (error) {
+        openDataContext = null;
+      }
+    }
+    return openDataContext;
+  }
+  function leaderboardAvailable() {
+    return context() !== null;
+  }
+  function submitFriendScore(points) {
+    const api = wx;
+    if (typeof api.setUserCloudStorage !== "function") return;
+    try {
+      api.setUserCloudStorage({
+        // WeChat requires string values; the key is what the open data context reads.
+        KVDataList: [{ key: "career", value: String(Math.round(points)) }],
+        fail: () => {
+        }
+      });
+    } catch (error) {
+    }
+  }
+  function requestFriendRanking(width, height, dpr) {
+    const ctx2 = context();
+    if (!ctx2) return;
+    try {
+      ctx2.canvas.width = Math.floor(width * dpr);
+      ctx2.canvas.height = Math.floor(height * dpr);
+      ctx2.postMessage({ type: "render", key: "career", width, height, dpr });
+    } catch (error) {
+    }
+  }
+  function sharedCanvas() {
+    const ctx2 = context();
+    return ctx2 ? ctx2.canvas : null;
+  }
+
+  // src/effects.ts
+  var effects = {
+    /** 0 = clear, 1 = fully blacked out. */
+    dim: 0,
+    /** Lane index that is currently lethal, or -1. */
+    hazardLane: -1
+  };
+  function resetEffects() {
+    effects.dim = 0;
+    effects.hazardLane = -1;
+  }
+
+  // src/modes/blackout.ts
+  var CYCLE = 7;
+  var DARK_SECONDS = 2;
+  var FADE = 0.45;
+  var blackout = {
+    id: "blackout",
+    name: "BLACKOUT",
+    rule: "每 7 秒熄灯 2 秒 · 靠记忆穿过车流",
+    timeLimit: 60,
+    scoreUnit: "PASSES",
+    trafficScale: 0.9,
+    setup() {
+      effects.dim = 0;
+    },
+    update(_dt, run2) {
+      const phase = run2.elapsed % CYCLE;
+      let dim = 0;
+      if (phase < DARK_SECONDS) {
+        const t = phase / DARK_SECONDS;
+        const edge = Math.min(t, 1 - t) / (FADE / DARK_SECONDS);
+        dim = Math.min(1, Math.max(0, edge)) * 0.94;
+      }
+      effects.dim = dim;
+      run2.score = player.totalPasses;
+      run2.progress = 1 - dim / 0.94;
+    }
+  };
+
+  // src/modes/chainReaction.ts
+  var CHAIN_WINDOW = 3.2;
+  var ARM_COMBO = 5;
+  var chain = 0;
+  var best = 0;
+  var chainReaction = {
+    id: "chain-reaction",
+    name: "CHAIN REACTION",
+    rule: `${ARM_COMBO} 次超车装填 · 每次摧毁刷新 ${CHAIN_WINDOW} 秒窗口`,
+    timeLimit: 75,
+    scoreUnit: "CHAIN",
+    trafficScale: 0.9,
+    setup() {
+      chain = 0;
+      best = 0;
+      player.fireball = 0;
+    },
+    update(_dt, run2) {
+      if (player.fireball <= 0 && chain > 0) {
+        chain = 0;
+        run2.banner = "CHAIN BROKEN";
+        run2.bannerTimer = 0.9;
+      }
+      if (player.fireball <= 0 && player.combo > 0 && player.combo % ARM_COMBO === 0) {
+        player.fireball = CHAIN_WINDOW;
+      }
+      run2.score = best;
+      run2.progress = player.fireball > 0 ? Math.min(1, player.fireball / CHAIN_WINDOW) : -1;
+    },
+    onContact() {
+      return player.fireball > 0 ? "destroy" : "crash";
+    },
+    onDestroy(_car, run2) {
+      chain += 1;
+      if (chain > best) best = chain;
+      player.fireball = CHAIN_WINDOW;
+      run2.banner = `CHAIN x${chain}`;
+      run2.bannerTimer = 0.7;
+    },
+    onCrash(run2) {
+      chain = 0;
+      run2.banner = "CHAIN LOST";
+      run2.bannerTimer = 0.9;
+    }
+  };
+
+  // src/modes/comboRacers.ts
+  var TARGET_COMBO = 40;
+  var comboRacers = {
+    id: "combo-racers",
+    name: "COMBO RACERS",
+    rule: `限时 60 秒 · Combo 冲到 ${TARGET_COMBO} · 撞车清零`,
+    timeLimit: 60,
+    scoreUnit: "COMBO",
+    trafficScale: 1,
+    update(_dt, run2) {
+      if (player.combo > run2.score) run2.score = player.combo;
+      run2.progress = Math.min(1, player.combo / TARGET_COMBO);
+    },
+    onCrash(run2) {
+      run2.banner = "COMBO LOST";
+      run2.bannerTimer = 1.1;
+    },
+    cleared(run2) {
+      return run2.score >= TARGET_COMBO;
+    }
+  };
+
+  // src/modes/deathRace.ts
+  var deathRace = {
+    id: "death-race",
+    name: "DEATH RACE",
+    rule: "限时 90 秒 · 撞毁场上全部车辆",
+    timeLimit: 90,
+    scoreUnit: "POINTS",
+    trafficScale: 0.85,
+    setup() {
+      player.fireball = Number.POSITIVE_INFINITY;
+    },
+    update(_dt, run2, cars) {
+      const remaining = cars.filter((car) => car.alive).length;
+      run2.progress = cars.length === 0 ? 1 : run2.destroyed / cars.length;
+      run2.score = run2.destroyed * 100 + Math.max(0, Math.floor(run2.timeRemaining)) * 20;
+      if (remaining === 0) run2.banner = "ALL CLEAR";
+    },
+    onContact() {
+      return "destroy";
+    },
+    cleared(_run, cars) {
+      return cars.length > 0 && cars.every((car) => !car.alive);
+    }
+  };
+
+  // src/modes/endurance.ts
+  var RAMP_PER_SECOND = 8e-3;
+  var baseline = [];
+  var endurance = {
+    id: "endurance",
+    name: "ENDURANCE",
+    rule: "无时间限制 · 一条命 · 车流永远在加速",
+    timeLimit: Infinity,
+    scoreUnit: "PASSES",
+    trafficScale: 0.75,
+    setup(_run, cars) {
+      baseline = cars.map((car) => car.baseSpeed);
+    },
+    update(_dt, run2, cars) {
+      const ramp = 1 + run2.elapsed * RAMP_PER_SECOND;
+      cars.forEach((car, index) => {
+        const original = baseline[index];
+        if (original !== void 0) car.baseSpeed = original * ramp;
+      });
+      run2.score = player.totalPasses;
+      run2.progress = -1;
+    },
+    onCrash(run2) {
+      run2.outcome = "wrecked";
+    }
+  };
+
+  // src/modes/fireballFrenzy.ts
+  var COMBO_PER_FIREBALL = 10;
+  var FIREBALL_DURATION = 6;
+  var lastCharge = 0;
+  var fireballFrenzy = {
+    id: "fireball-frenzy",
+    name: "FIREBALL FRENZY",
+    rule: `每 ${COMBO_PER_FIREBALL} 次超车化身火球 · 火球状态撞车即摧毁`,
+    timeLimit: 60,
+    scoreUnit: "POINTS",
+    trafficScale: 1,
+    setup() {
+      lastCharge = 0;
+    },
+    update(_dt, run2) {
+      const charge2 = Math.floor(player.combo / COMBO_PER_FIREBALL);
+      if (charge2 > lastCharge) {
+        lastCharge = charge2;
+        player.fireball = FIREBALL_DURATION;
+        run2.banner = "FIREBALL!";
+        run2.bannerTimer = 1.2;
+      }
+      run2.score = run2.destroyed * 200 + player.totalPasses * 10;
+      run2.progress = player.fireball > 0 ? player.fireball / FIREBALL_DURATION : -1;
+    },
+    onContact(_car) {
+      return player.fireball > 0 ? "destroy" : "crash";
+    },
+    onCrash(run2) {
+      lastCharge = 0;
+      run2.banner = "BURNED OUT";
+      run2.bannerTimer = 1;
+    }
+  };
 
   // src/mathUtil.ts
   function clamp(value, min, max) {
@@ -557,12 +848,12 @@ var HarborLoop = (() => {
       }
     }
   }
-  function createLoopingNoiseSource(context) {
-    if (!context || typeof context.createBuffer !== "function" || typeof context.createBufferSource !== "function") return null;
+  function createLoopingNoiseSource(context2) {
+    if (!context2 || typeof context2.createBuffer !== "function" || typeof context2.createBufferSource !== "function") return null;
     try {
-      const sampleRate = context.sampleRate || 44100;
+      const sampleRate = context2.sampleRate || 44100;
       const frameCount = Math.max(1, Math.floor(sampleRate * 1.25));
-      const buffer = context.createBuffer(1, frameCount, sampleRate);
+      const buffer = context2.createBuffer(1, frameCount, sampleRate);
       const data = buffer.getChannelData(0);
       let previous = 0;
       for (let index = 0; index < frameCount; index++) {
@@ -570,7 +861,7 @@ var HarborLoop = (() => {
         previous = previous * 0.965 + white * 0.035;
         data[index] = previous * 2.4;
       }
-      const source = context.createBufferSource();
+      const source = context2.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
       return source;
@@ -622,18 +913,18 @@ var HarborLoop = (() => {
       }
       if (!this.started) {
         try {
-          const context = this.context;
-          this.masterGain = context.createGain();
-          this.engineGain = context.createGain();
-          this.engineMidGain = context.createGain();
-          this.engineHighGain = context.createGain();
-          this.engineNoiseGain = context.createGain();
-          this.engineFilter = context.createBiquadFilter();
-          this.engineNoiseFilter = context.createBiquadFilter();
-          this.engineLow = context.createOscillator();
-          this.engineMid = context.createOscillator();
-          this.engineHigh = context.createOscillator();
-          this.engineNoise = createLoopingNoiseSource(context);
+          const context2 = this.context;
+          this.masterGain = context2.createGain();
+          this.engineGain = context2.createGain();
+          this.engineMidGain = context2.createGain();
+          this.engineHighGain = context2.createGain();
+          this.engineNoiseGain = context2.createGain();
+          this.engineFilter = context2.createBiquadFilter();
+          this.engineNoiseFilter = context2.createBiquadFilter();
+          this.engineLow = context2.createOscillator();
+          this.engineMid = context2.createOscillator();
+          this.engineHigh = context2.createOscillator();
+          this.engineNoise = createLoopingNoiseSource(context2);
           setAudioParam(this.masterGain.gain, 0.46);
           setAudioParam(this.engineGain.gain, 1e-4);
           setAudioParam(this.engineMidGain.gain, 0.07);
@@ -678,7 +969,7 @@ var HarborLoop = (() => {
           }
           this.engineFilter.connect(this.engineGain);
           this.engineGain.connect(this.masterGain);
-          this.masterGain.connect(context.destination);
+          this.masterGain.connect(context2.destination);
           safelyStartNode(this.engineLow);
           safelyStartNode(this.engineMid);
           safelyStartNode(this.engineHigh);
@@ -694,12 +985,12 @@ var HarborLoop = (() => {
     }
     addTone(type, duration, startFrequency, endFrequency, volume) {
       if (!this.ensureStarted()) return;
-      const context = this.context;
+      const context2 = this.context;
       const masterGain = this.masterGain;
-      if (!context || !masterGain) return;
+      if (!context2 || !masterGain) return;
       try {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
+        const oscillator = context2.createOscillator();
+        const gain = context2.createGain();
         try {
           oscillator.type = type;
         } catch (error) {
@@ -821,38 +1112,6 @@ var HarborLoop = (() => {
   };
   var audio = new AudioEngine();
 
-  // src/controls.ts
-  var CONTROL_BAR_TOP = 738;
-  var CONTROL_H = 72;
-  var CONTROL_RADIUS = 18;
-  var CONTROL_HIT_PADDING = 10;
-  var CONTROL_FLASH_DURATION = 0.14;
-  var CONTROLS = [
-    { id: "left", kind: "lane", direction: 1, x: 20, w: 76 },
-    { id: "right", kind: "lane", direction: -1, x: 104, w: 76 },
-    { id: "throttle", kind: "throttle", direction: 0, x: 236, w: 134 }
-  ].map((control) => __spreadProps(__spreadValues({}, control), { y: CONTROL_BAR_TOP, h: CONTROL_H }));
-  function controlAtDesignPoint(x, y) {
-    for (const control of CONTROLS) {
-      if (x >= control.x - CONTROL_HIT_PADDING && x <= control.x + control.w + CONTROL_HIT_PADDING && y >= control.y - CONTROL_HIT_PADDING && y <= control.y + control.h + CONTROL_HIT_PADDING) {
-        return control;
-      }
-    }
-    return null;
-  }
-  var laneButtonFlash = {
-    left: 0,
-    right: 0
-  };
-  function updateControlFlash(dt) {
-    laneButtonFlash.left = Math.max(0, laneButtonFlash.left - dt);
-    laneButtonFlash.right = Math.max(0, laneButtonFlash.right - dt);
-  }
-  function flashLaneButton(id) {
-    if (id === "throttle") return;
-    laneButtonFlash[id] = CONTROL_FLASH_DURATION;
-  }
-
   // src/player.ts
   function laneInputStateAllows() {
     return player.state !== "CRASHED";
@@ -892,6 +1151,7 @@ var HarborLoop = (() => {
     player.invincible = Math.max(0, player.invincible - dt);
     player.tierBoostElapsed = Math.max(0, player.tierBoostElapsed - dt);
     player.passPopElapsed += dt;
+    if (Number.isFinite(player.fireball)) player.fireball = Math.max(0, player.fireball - dt);
     if (player.laneChangeElapsed > 0) {
       player.laneChangeElapsed += dt;
       const t = Math.min(1, player.laneChangeElapsed / CHANGE_DURATION);
@@ -913,9 +1173,9 @@ var HarborLoop = (() => {
     } else if (player.state === "RECOVERING") {
       player.stateElapsed += dt;
       const t = Math.min(1, player.stateElapsed / 0.7);
-      player.speed = PLAYER_CRUISE_BASE_SPEED * t;
+      player.speed = baseCruiseSpeed() * t;
       if (t >= 1) {
-        player.speed = PLAYER_CRUISE_BASE_SPEED;
+        player.speed = baseCruiseSpeed();
         player.state = "NORMAL";
         player.stateElapsed = 0;
       }
@@ -925,7 +1185,998 @@ var HarborLoop = (() => {
       const rate = targetSpeed >= player.speed ? acceleration : PLAYER_COAST_DECELERATION;
       player.speed = moveToward(player.speed, targetSpeed, rate * dt);
     }
+    const before = player.distance;
     player.distance = advanceDistanceAtRoadSpeed(player.distance, player.speed, dt, player.visualLane);
+    player.travelled += Math.max(0, player.distance - before);
+  }
+
+  // src/modes/ghostLane.ts
+  var SWITCH_SECONDS = 4.5;
+  var WARNING_SECONDS = 1.2;
+  var timer = 0;
+  var nextLane = 0;
+  var ghostLane = {
+    id: "ghost-lane",
+    name: "GHOST LANE",
+    rule: "每隔几秒一条车道带电 · 提前 1.2 秒预警",
+    timeLimit: 60,
+    scoreUnit: "PASSES",
+    trafficScale: 1,
+    setup() {
+      timer = SWITCH_SECONDS;
+      nextLane = Math.floor(Math.random() * LANE_COUNT);
+      effects.hazardLane = -1;
+    },
+    update(dt, run2) {
+      timer -= dt;
+      if (timer <= 0) {
+        effects.hazardLane = nextLane;
+        let candidate = Math.floor(Math.random() * LANE_COUNT);
+        if (candidate === nextLane) candidate = (candidate + 1) % LANE_COUNT;
+        nextLane = candidate;
+        timer = SWITCH_SECONDS;
+      } else if (timer <= WARNING_SECONDS) {
+        effects.hazardLane = nextLane;
+      }
+      const live = timer > WARNING_SECONDS;
+      if (live && effects.hazardLane >= 0 && Math.abs(player.visualLane - effects.hazardLane) < 0.45 && player.state !== "CRASHED" && player.invincible <= 0) {
+        run2.banner = "ZAPPED";
+        run2.bannerTimer = 1;
+        beginCollision();
+      }
+      run2.score = player.totalPasses;
+      run2.progress = Math.max(0, Math.min(1, timer / SWITCH_SECONDS));
+    }
+  };
+
+  // src/modes/hotRods.ts
+  var HEAT_RISE_SECONDS = 3.2;
+  var HEAT_FALL_SECONDS = 2;
+  var hotRods = {
+    id: "hot-rods",
+    name: "HOT RODS",
+    rule: "油门会过热 · 限时 60 秒跑出最远距离",
+    timeLimit: 60,
+    scoreUnit: "METRES",
+    trafficScale: 1,
+    setup() {
+      player.heat = 0;
+    },
+    update(dt, run2) {
+      if (player.state === "CRASHED") {
+        player.heat = Math.max(0, player.heat - dt / HEAT_FALL_SECONDS);
+      } else if (inputState.throttle) {
+        player.heat = Math.min(1, player.heat + dt / HEAT_RISE_SECONDS);
+        if (player.heat >= 1) {
+          player.heat = 0;
+          run2.banner = "ENGINE BLOWN";
+          run2.bannerTimer = 1.2;
+          beginCollision();
+        }
+      } else {
+        player.heat = Math.max(0, player.heat - dt / HEAT_FALL_SECONDS);
+      }
+      run2.score = Math.floor(player.travelled);
+      run2.progress = player.heat;
+    }
+  };
+
+  // src/modes/inTheZone.ts
+  var ZONE_COUNT = 6;
+  var ZONE_NEAR = 13;
+  var ZONE_FAR = 66;
+  var ZONE_LANE_TOLERANCE = 0.7;
+  var ZONE_FILL_SECONDS = 2;
+  var inTheZone = {
+    id: "in-the-zone",
+    name: "IN THE ZONE",
+    rule: `跟住 ${ZONE_COUNT} 辆标记车尾流 · 待满即清除`,
+    timeLimit: 75,
+    scoreUnit: "POINTS",
+    trafficScale: 0.9,
+    setup(_run, cars) {
+      const stride = Math.max(1, Math.floor(cars.length / ZONE_COUNT));
+      cars.forEach((car) => {
+        car.hasZone = false;
+        car.zoneFill = 0;
+      });
+      for (let i = 0; i < ZONE_COUNT; i++) {
+        const car = cars[i * stride % cars.length];
+        if (car) car.hasZone = true;
+      }
+    },
+    update(dt, run2, cars) {
+      let cleared = 0;
+      let marked = 0;
+      for (const car of cars) {
+        if (!car.alive) continue;
+        if (!car.hasZone) {
+          if (car.zoneFill >= 1) cleared += 1;
+          continue;
+        }
+        marked += 1;
+        const gap = forwardPathDistance(player.distance, car.distance);
+        const inBand = gap > ZONE_NEAR && gap < ZONE_FAR;
+        const inLane = Math.abs(player.visualLane - car.visualLane) < ZONE_LANE_TOLERANCE;
+        if (inBand && inLane && player.state !== "CRASHED") {
+          car.zoneFill = Math.min(1, car.zoneFill + dt / ZONE_FILL_SECONDS);
+          if (car.zoneFill >= 1) {
+            car.hasZone = false;
+            run2.banner = "ZONE CLEAR";
+            run2.bannerTimer = 0.9;
+          }
+        } else {
+          car.zoneFill = Math.max(0, car.zoneFill - dt * 0.55);
+        }
+      }
+      run2.score = cleared * 500 + Math.max(0, Math.floor(run2.timeRemaining)) * 5;
+      run2.progress = Math.min(1, cleared / Math.max(1, cleared + marked));
+    },
+    cleared(_run, cars) {
+      return cars.every((car) => !car.hasZone);
+    }
+  };
+
+  // src/modes/lastMan.ts
+  var CULL_INTERVAL = 4;
+  var timer2 = 0;
+  var lastMan = {
+    id: "last-man",
+    name: "LAST MAN",
+    rule: "对手每 4 秒自爆一辆 · 车越少分越难拿",
+    timeLimit: 75,
+    scoreUnit: "PASSES",
+    trafficScale: 0.95,
+    setup() {
+      timer2 = CULL_INTERVAL;
+    },
+    update(dt, run2, cars) {
+      timer2 -= dt;
+      if (timer2 <= 0) {
+        timer2 = CULL_INTERVAL;
+        const alive2 = cars.filter((car) => car.alive);
+        if (alive2.length > 2) {
+          const victim = alive2[Math.floor(Math.random() * alive2.length)];
+          victim.alive = false;
+          victim.wreck = 1;
+          run2.banner = `${alive2.length - 1} LEFT`;
+          run2.bannerTimer = 0.8;
+        }
+      }
+      run2.score = player.totalPasses;
+      const alive = cars.filter((car) => car.alive).length;
+      run2.progress = cars.length === 0 ? 0 : alive / cars.length;
+    }
+  };
+
+  // src/modes/paceSetter.ts
+  var BAND_HALF_WIDTH = 26;
+  var BAND_MIN = 150;
+  var BAND_MAX = 430;
+  var BAND_PERIOD = 13;
+  var inBandSeconds = 0;
+  function paceTarget(elapsed) {
+    const t = (Math.sin(elapsed / BAND_PERIOD * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+    return BAND_MIN + (BAND_MAX - BAND_MIN) * t;
+  }
+  var paceSetter = {
+    id: "pace-setter",
+    name: "PACE SETTER",
+    rule: "把车速保持在移动的目标区间内 · 计时 60 秒",
+    timeLimit: 60,
+    scoreUnit: "POINTS",
+    trafficScale: 0.85,
+    setup() {
+      inBandSeconds = 0;
+    },
+    update(dt, run2) {
+      const target = paceTarget(run2.elapsed);
+      const delta = Math.abs(player.speed - target);
+      const inside = delta <= BAND_HALF_WIDTH && player.state !== "CRASHED";
+      if (inside) inBandSeconds += dt;
+      run2.score = Math.floor(inBandSeconds * 100);
+      run2.progress = Math.max(0, 1 - delta / (BAND_HALF_WIDTH * 3));
+    }
+  };
+
+  // src/modes/rushHour.ts
+  var RAMP_PER_SECOND2 = 0.011;
+  var baseline2 = [];
+  var rushHour = {
+    id: "rush-hour",
+    name: "RUSH HOUR",
+    rule: "车流持续提速 · 撑满 75 秒超越尽可能多的车",
+    timeLimit: 75,
+    scoreUnit: "PASSES",
+    trafficScale: 0.8,
+    setup(_run, cars) {
+      baseline2 = cars.map((car) => car.baseSpeed);
+    },
+    update(_dt, run2, cars) {
+      const ramp = 1 + run2.elapsed * RAMP_PER_SECOND2;
+      cars.forEach((car, index) => {
+        const original = baseline2[index];
+        if (original !== void 0) car.baseSpeed = original * ramp;
+      });
+      run2.score = player.totalPasses;
+      run2.progress = Math.min(1, (ramp - 1) / (RAMP_PER_SECOND2 * 75));
+    }
+  };
+
+  // src/modes/slipstream.ts
+  var TUCK_NEAR = 11;
+  var TUCK_FAR = 30;
+  var CHARGE_SECONDS = 1.6;
+  var charge = 0;
+  var slipstream = {
+    id: "slipstream",
+    name: "SLIPSTREAM",
+    rule: "贴住前车尾流蓄力 · 满蓄时超车得双倍分",
+    timeLimit: 60,
+    scoreUnit: "POINTS",
+    trafficScale: 0.95,
+    setup() {
+      charge = 0;
+    },
+    update(dt, run2, cars) {
+      let tucked = false;
+      for (const car of cars) {
+        if (!car.alive) continue;
+        const gap = forwardPathDistance(player.distance, car.distance);
+        if (gap > TUCK_NEAR && gap < TUCK_FAR && Math.abs(player.visualLane - car.visualLane) < 0.6) {
+          tucked = true;
+          break;
+        }
+      }
+      charge = tucked ? Math.min(1, charge + dt / CHARGE_SECONDS) : Math.max(0, charge - dt * 0.35);
+      run2.progress = charge;
+    },
+    onOvertake(count, run2) {
+      const multiplier = charge >= 1 ? 2 : 1;
+      if (multiplier === 2) {
+        run2.banner = "SLIPSTREAM x2";
+        run2.bannerTimer = 0.8;
+        charge = 0;
+      }
+      run2.score += count * 100 * multiplier;
+    },
+    onCrash(run2) {
+      charge = 0;
+      run2.banner = "SPUN OUT";
+      run2.bannerTimer = 0.9;
+    }
+  };
+
+  // src/modes/speedMonkey.ts
+  var speedMonkey = {
+    id: "speed-monkey",
+    name: "SPEED MONKEY",
+    rule: "速度只增不减 · 撞一次就结束",
+    timeLimit: Infinity,
+    scoreUnit: "COMBO",
+    trafficScale: 1,
+    update(_dt, run2) {
+      run2.progress = -1;
+      if (player.combo > run2.score) run2.score = player.combo;
+    },
+    onCrash(run2) {
+      run2.outcome = "wrecked";
+    }
+  };
+
+  // src/modes/sundayDrivers.ts
+  var sundayDrivers = {
+    id: "sunday-drivers",
+    name: "SUNDAY DRIVERS",
+    rule: "车流极慢 · 限时 60 秒超越尽可能多的车",
+    timeLimit: 60,
+    scoreUnit: "PASSES",
+    trafficScale: 0.42,
+    update(_dt, run2) {
+      run2.score = player.totalPasses;
+      run2.progress = -1;
+    },
+    onCrash(run2) {
+      run2.banner = `CRASH x${run2.crashes}`;
+      run2.bannerTimer = 0.9;
+    }
+  };
+
+  // src/modes/timeAttack.ts
+  var LAPS = 3;
+  var startDistance = 0;
+  var timeAttack = {
+    id: "time-attack",
+    name: "TIME ATTACK",
+    rule: `跑完 ${LAPS} 圈 · 用时越短越好`,
+    timeLimit: 180,
+    scoreUnit: "SECONDS",
+    trafficScale: 0.9,
+    lowerIsBetter: true,
+    setup() {
+      startDistance = player.distance;
+    },
+    update(_dt, run2) {
+      const lapsDone = (player.distance - startDistance) / arc.total;
+      run2.progress = Math.min(1, lapsDone / LAPS);
+      run2.score = Math.round(run2.elapsed * 10) / 10;
+    },
+    cleared() {
+      return (player.distance - startDistance) / arc.total >= LAPS;
+    }
+  };
+
+  // src/modes/index.ts
+  var MODES = [
+    speedMonkey,
+    comboRacers,
+    sundayDrivers,
+    fireballFrenzy,
+    deathRace,
+    inTheZone,
+    hotRods,
+    slipstream,
+    ghostLane,
+    rushHour,
+    paceSetter,
+    lastMan,
+    chainReaction,
+    blackout,
+    timeAttack,
+    endurance
+  ];
+  var ORIGINAL_MODE_IDS = /* @__PURE__ */ new Set([
+    "speed-monkey",
+    "combo-racers",
+    "sunday-drivers",
+    "fireball-frenzy",
+    "death-race",
+    "in-the-zone",
+    "hot-rods"
+  ]);
+  var BY_ID = new Map(MODES.map((mode) => [mode.id, mode]));
+  function modeById(id) {
+    const mode = BY_ID.get(id);
+    if (!mode) throw new Error(`unknown mode: ${id}`);
+    return mode;
+  }
+
+  // src/run.ts
+  var run = {
+    modeId: MODES[0].id,
+    difficulty: "normal",
+    elapsed: 0,
+    timeRemaining: Infinity,
+    score: 0,
+    destroyed: 0,
+    crashes: 0,
+    outcome: "running",
+    progress: -1,
+    banner: "",
+    bannerTimer: 0
+  };
+  var activeMode = MODES[0];
+  function startRun(modeId, difficulty) {
+    var _a;
+    activeMode = modeById(modeId);
+    applyTuning(difficulty, activeMode.trafficScale);
+    resetGame();
+    resetEffects();
+    run.modeId = modeId;
+    run.difficulty = difficulty;
+    run.elapsed = 0;
+    run.timeRemaining = activeMode.timeLimit;
+    run.score = 0;
+    run.destroyed = 0;
+    run.crashes = 0;
+    run.outcome = "running";
+    run.progress = -1;
+    run.banner = "";
+    run.bannerTimer = 0;
+    (_a = activeMode.setup) == null ? void 0 : _a.call(activeMode, run, aiCars);
+  }
+  function updateRun(dt) {
+    var _a, _b, _c;
+    if (run.outcome !== "running") return;
+    run.elapsed += dt;
+    if (Number.isFinite(run.timeRemaining)) {
+      run.timeRemaining = Math.max(0, run.timeRemaining - dt);
+    }
+    run.bannerTimer = Math.max(0, run.bannerTimer - dt);
+    if (run.bannerTimer <= 0) run.banner = "";
+    (_a = activeMode.update) == null ? void 0 : _a.call(activeMode, dt, run, aiCars);
+    if (run.outcome !== "running") return;
+    if ((_b = activeMode.cleared) == null ? void 0 : _b.call(activeMode, run, aiCars)) run.outcome = "cleared";
+    else if ((_c = activeMode.failed) == null ? void 0 : _c.call(activeMode, run, aiCars)) run.outcome = "wrecked";
+    else if (run.timeRemaining <= 0) run.outcome = "timeout";
+  }
+  function runIsOver() {
+    return run.outcome !== "running";
+  }
+
+  // src/storage.ts
+  var STORAGE_KEY = "harbor-loop-bests-v1";
+  var cache = null;
+  function readRaw() {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.getStorageSync === "function") {
+        const value = anyWx.getStorageSync(STORAGE_KEY);
+        return typeof value === "string" && value ? value : null;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") return localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+    }
+    return null;
+  }
+  function writeRaw(value) {
+    try {
+      const anyWx = wx;
+      if (typeof anyWx.setStorageSync === "function") {
+        anyWx.setStorageSync(STORAGE_KEY, value);
+        return;
+      }
+    } catch (error) {
+    }
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(STORAGE_KEY, value);
+    } catch (error) {
+    }
+  }
+  function table() {
+    if (cache) return cache;
+    const raw = readRaw();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          cache = parsed;
+          return cache;
+        }
+      } catch (error) {
+      }
+    }
+    cache = {};
+    return cache;
+  }
+  function key(modeId, difficulty) {
+    return `${modeId}:${difficulty}`;
+  }
+  function bestScore(modeId, difficulty) {
+    const value = table()[key(modeId, difficulty)];
+    return typeof value === "number" ? value : null;
+  }
+  function submitScore(modeId, difficulty, score, lowerIsBetter) {
+    const current = bestScore(modeId, difficulty);
+    const improved = current === null || (lowerIsBetter ? score < current : score > current);
+    if (!improved) return false;
+    table()[key(modeId, difficulty)] = score;
+    writeRaw(JSON.stringify(table()));
+    return true;
+  }
+  function careerPoints() {
+    return Object.entries(table()).reduce((total, [entryKey, value]) => {
+      if (entryKey.startsWith("time-attack:")) return total;
+      return total + (typeof value === "number" ? value : 0);
+    }, 0);
+  }
+
+  // src/app.ts
+  var app = {
+    screen: "MENU",
+    difficulty: "normal",
+    /** Pixels the mode list is scrolled by; only used when the list overflows. */
+    menuScroll: 0,
+    result: null
+  };
+  function openMenu() {
+    app.screen = "MENU";
+  }
+  function startMode(modeId) {
+    startRun(modeId, app.difficulty);
+    app.screen = "PLAYING";
+  }
+  function retryRun() {
+    const summary = app.result;
+    if (summary) startRun(summary.modeId, summary.difficulty);
+    else startMode(MODES[0].id);
+    app.screen = "PLAYING";
+  }
+  function finishRun() {
+    const mode = modeById(run.modeId);
+    const lowerIsBetter = Boolean(mode.lowerIsBetter);
+    const scoreCounts = !(lowerIsBetter && run.outcome !== "cleared");
+    const newBest = scoreCounts && submitScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
+    app.result = {
+      modeId: run.modeId,
+      difficulty: run.difficulty,
+      outcome: run.outcome,
+      score: run.score,
+      best: bestScore(run.modeId, run.difficulty),
+      newBest,
+      scoreUnit: mode.scoreUnit
+    };
+    if (newBest) submitFriendScore(careerPoints());
+    app.screen = "RESULT";
+  }
+
+  // src/controls.ts
+  var CONTROL_BAR_TOP = 738;
+  var CONTROL_H = 72;
+  var CONTROL_RADIUS = 18;
+  var CONTROL_HIT_PADDING = 10;
+  var CONTROL_FLASH_DURATION = 0.14;
+  var CONTROLS = [
+    { id: "left", kind: "lane", direction: 1, x: 20, w: 76 },
+    { id: "right", kind: "lane", direction: -1, x: 104, w: 76 },
+    { id: "throttle", kind: "throttle", direction: 0, x: 236, w: 134 }
+  ].map((control) => __spreadProps(__spreadValues({}, control), { y: CONTROL_BAR_TOP, h: CONTROL_H }));
+  function controlAtDesignPoint(x, y) {
+    for (const control of CONTROLS) {
+      if (x >= control.x - CONTROL_HIT_PADDING && x <= control.x + control.w + CONTROL_HIT_PADDING && y >= control.y - CONTROL_HIT_PADDING && y <= control.y + control.h + CONTROL_HIT_PADDING) {
+        return control;
+      }
+    }
+    return null;
+  }
+  var laneButtonFlash = {
+    left: 0,
+    right: 0
+  };
+  function updateControlFlash(dt) {
+    laneButtonFlash.left = Math.max(0, laneButtonFlash.left - dt);
+    laneButtonFlash.right = Math.max(0, laneButtonFlash.right - dt);
+  }
+  function flashLaneButton(id) {
+    if (id === "throttle") return;
+    laneButtonFlash[id] = CONTROL_FLASH_DURATION;
+  }
+
+  // src/theme.ts
+  var COLORS = {
+    water: "#163D52",
+    waterDeep: "#102F42",
+    waterLine: "rgba(255,255,255,0.045)",
+    land: "#A8BE79",
+    landLight: "#C0CF91",
+    landDark: "#7F995F",
+    roadShadow: "rgba(5,14,20,0.48)",
+    roadEdge: "#20282D",
+    curbLight: "#F1E9D7",
+    curbRed: "#D86A59",
+    road: "#626D73",
+    roadHighlight: "rgba(255,255,255,0.045)",
+    lane: "rgba(246,242,226,0.55)",
+    player: "#F05A47",
+    playerLight: "#FF8D73",
+    playerStripe: "#FFF4D8",
+    window: "#C8EDF1",
+    ai: "#161B1E",
+    aiLight: "#31383C",
+    aiWindow: "#69777D",
+    text: "#F7F4EA",
+    muted: "rgba(247,244,234,0.66)",
+    accent: "#57D5CB",
+    accentLight: "#C5FFF7",
+    button: "rgba(8,17,25,0.82)",
+    buttonActive: "rgba(87,213,203,0.30)",
+    buttonDisabled: "rgba(8,17,25,0.42)",
+    buttonEdge: "rgba(247,244,234,0.28)"
+  };
+
+  // src/render/primitives.ts
+  function strokeClosedPath(points, width, color, dash = []) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.setLineDash(dash);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function roundRect(context2, x, y, w, h, r) {
+    const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    context2.beginPath();
+    context2.moveTo(x + radius, y);
+    context2.arcTo(x + w, y, x + w, y + h, radius);
+    context2.arcTo(x + w, y + h, x, y + h, radius);
+    context2.arcTo(x, y + h, x, y, radius);
+    context2.arcTo(x, y, x + w, y, radius);
+    context2.closePath();
+  }
+
+  // src/render/hud.ts
+  var BACK_BUTTON = { x: DESIGN_W - 52, y: 12, w: 40, h: 40 };
+  function drawComboPill() {
+    ctx.fillStyle = "rgba(8,17,25,0.66)";
+    roundRect(ctx, 12, 12, 68, 42, 13);
+    ctx.fill();
+    ctx.fillStyle = player.combo > 0 ? COLORS.accentLight : COLORS.text;
+    const tierPulse = player.tierBoostElapsed > 0 ? 1 + Math.sin((PLAYER_TIER_BOOST_DURATION - player.tierBoostElapsed) * Math.PI * 8) * 0.08 : 1;
+    ctx.save();
+    ctx.translate(46, 35);
+    ctx.scale(tierPulse, tierPulse);
+    ctx.font = "900 25px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`x${player.combo}`, 0, 5);
+    ctx.restore();
+  }
+  function drawClockAndScore() {
+    const mode = modeById(run.modeId);
+    if (Number.isFinite(run.timeRemaining)) {
+      const urgent = run.timeRemaining <= 10;
+      ctx.fillStyle = "rgba(8,17,25,0.66)";
+      roundRect(ctx, 88, 12, 74, 42, 13);
+      ctx.fill();
+      ctx.textAlign = "center";
+      ctx.fillStyle = urgent ? "#FF7A6B" : COLORS.text;
+      ctx.font = "900 22px monospace";
+      ctx.fillText(run.timeRemaining.toFixed(1), 125, 41);
+    }
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.accentLight;
+    ctx.font = "900 20px monospace";
+    ctx.fillText(String(run.score), DESIGN_W - 60, 34);
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "700 8px sans-serif";
+    ctx.fillText(mode.scoreUnit, DESIGN_W - 60, 46);
+    ctx.textAlign = "center";
+  }
+  function drawBackButton() {
+    roundRect(ctx, BACK_BUTTON.x, BACK_BUTTON.y, BACK_BUTTON.w, BACK_BUTTON.h, 12);
+    ctx.fillStyle = COLORS.button;
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = COLORS.buttonEdge;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.text;
+    ctx.fillRect(BACK_BUTTON.x + 14, BACK_BUTTON.y + 12, 4, 16);
+    ctx.fillRect(BACK_BUTTON.x + 22, BACK_BUTTON.y + 12, 4, 16);
+  }
+  function drawObjectiveBar() {
+    if (run.progress < 0) return;
+    const x = 12;
+    const y = 62;
+    const w = DESIGN_W - 24;
+    const h = 6;
+    roundRect(ctx, x, y, w, h, 3);
+    ctx.fillStyle = "rgba(8,17,25,0.66)";
+    ctx.fill();
+    const filled = Math.max(0, Math.min(1, run.progress));
+    if (filled > 0) {
+      roundRect(ctx, x, y, w * filled, h, 3);
+      ctx.fillStyle = COLORS.accent;
+      ctx.fill();
+    }
+  }
+  function drawBanner() {
+    if (!run.banner || run.bannerTimer <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, run.bannerTimer * 2.4);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.accentLight;
+    ctx.font = "900 26px sans-serif";
+    ctx.fillText(run.banner, DESIGN_W / 2, 372);
+    ctx.restore();
+  }
+  function drawCrashBanner() {
+    if (player.state !== "CRASHED") return;
+    ctx.fillStyle = "rgba(255,79,82,0.92)";
+    roundRect(ctx, 122, 390, 146, 54, 16);
+    ctx.fill();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "900 21px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("CRASH!", 195, 420);
+    ctx.font = "700 9px sans-serif";
+    ctx.fillText("COMBO RESET", 195, 437);
+  }
+  function drawHud() {
+    drawComboPill();
+    drawClockAndScore();
+    drawBackButton();
+    drawObjectiveBar();
+    drawCrashBanner();
+    drawBanner();
+  }
+  function drawLaneArrow(cx, cy, direction, color) {
+    const tip = direction > 0 ? -15 : 15;
+    ctx.beginPath();
+    ctx.moveTo(cx + tip, cy);
+    ctx.lineTo(cx - tip * 0.6, cy - 15);
+    ctx.lineTo(cx - tip * 0.6, cy + 15);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  function drawControls() {
+    for (const control of CONTROLS) {
+      const active = control.kind === "throttle" ? inputState.throttle : laneButtonFlash[control.id] > 0;
+      const cx = control.x + control.w * 0.5;
+      const cy = control.y + control.h * 0.5;
+      roundRect(ctx, control.x, control.y, control.w, control.h, CONTROL_RADIUS);
+      ctx.fillStyle = COLORS.button;
+      ctx.fill();
+      if (active) {
+        ctx.fillStyle = COLORS.buttonActive;
+        ctx.fill();
+      }
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = active ? COLORS.accentLight : COLORS.buttonEdge;
+      ctx.stroke();
+      const glyph = active ? COLORS.accentLight : COLORS.text;
+      if (control.kind === "lane") {
+        drawLaneArrow(cx, cy, control.direction, glyph);
+      } else {
+        if (player.heat > 0) {
+          const heatH = (control.h - 8) * Math.min(1, player.heat);
+          roundRect(ctx, control.x + 4, control.y + control.h - 4 - heatH, control.w - 8, heatH, 12);
+          ctx.fillStyle = player.heat > 0.75 ? "rgba(255,110,90,0.42)" : "rgba(255,181,90,0.26)";
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 19);
+        ctx.lineTo(cx - 15, cy);
+        ctx.lineTo(cx + 15, cy);
+        ctx.closePath();
+        ctx.fillStyle = glyph;
+        ctx.fill();
+        ctx.font = "900 13px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("GAS", cx, cy + 21);
+      }
+    }
+  }
+
+  // src/screens/menu.ts
+  var PILL_Y = 92;
+  var PILL_H = 34;
+  var LIST_TOP = 146;
+  var ROW_H = 41;
+  var ROW_GAP = 2;
+  var LIST_MARGIN = 16;
+  function pillRect(index) {
+    const w = (DESIGN_W - LIST_MARGIN * 2 - 12) / 3;
+    return { x: LIST_MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
+  }
+  function rowRect(index) {
+    return {
+      x: LIST_MARGIN,
+      y: LIST_TOP + index * (ROW_H + ROW_GAP),
+      w: DESIGN_W - LIST_MARGIN * 2,
+      h: ROW_H
+    };
+  }
+  function drawMenu() {
+    ctx.fillStyle = "#0C1A23";
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.text;
+    ctx.font = "900 30px sans-serif";
+    ctx.fillText("HARBOR LOOP", LIST_MARGIN, 52);
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "600 11px sans-serif";
+    ctx.fillText("16 MODES · 3 SPEEDS · 48 LEADERBOARDS", LIST_MARGIN, 70);
+    ctx.textAlign = "right";
+    ctx.fillStyle = COLORS.accent;
+    ctx.font = "900 13px monospace";
+    ctx.fillText(`${careerPoints()} PTS`, DESIGN_W - LIST_MARGIN, 52);
+    DIFFICULTIES.forEach((difficulty, index) => {
+      const rect = pillRect(index);
+      const selected = app.difficulty === difficulty;
+      roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 10);
+      ctx.fillStyle = selected ? COLORS.buttonActive : COLORS.button;
+      ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = selected ? COLORS.accentLight : COLORS.buttonEdge;
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.fillStyle = selected ? COLORS.accentLight : COLORS.muted;
+      ctx.font = "900 12px sans-serif";
+      ctx.fillText(DIFFICULTY_LABEL[difficulty], rect.x + rect.w / 2, rect.y + 22);
+    });
+    MODES.forEach((mode, index) => {
+      const rect = rowRect(index);
+      roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 9);
+      ctx.fillStyle = COLORS.button;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = COLORS.buttonEdge;
+      ctx.stroke();
+      ctx.textAlign = "left";
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "900 13px sans-serif";
+      ctx.fillText(mode.name, rect.x + 10, rect.y + 17);
+      if (ORIGINAL_MODE_IDS.has(mode.id)) {
+        const labelWidth = ctx.measureText(mode.name).width;
+        ctx.fillStyle = COLORS.accent;
+        ctx.font = "900 8px sans-serif";
+        ctx.fillText("PJ", rect.x + 16 + labelWidth, rect.y + 13);
+      }
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = "500 9.5px sans-serif";
+      ctx.fillText(mode.rule, rect.x + 10, rect.y + 32);
+      const best2 = bestScore(mode.id, app.difficulty);
+      ctx.textAlign = "right";
+      if (best2 === null) {
+        ctx.fillStyle = "rgba(247,244,234,0.28)";
+        ctx.font = "700 10px monospace";
+        ctx.fillText("--", rect.x + rect.w - 10, rect.y + 25);
+      } else {
+        ctx.fillStyle = COLORS.accentLight;
+        ctx.font = "900 14px monospace";
+        ctx.fillText(String(best2), rect.x + rect.w - 10, rect.y + 25);
+      }
+    });
+    ctx.textAlign = "center";
+  }
+  function handleMenuTap(x, y) {
+    for (let i = 0; i < DIFFICULTIES.length; i++) {
+      const rect = pillRect(i);
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+        app.difficulty = DIFFICULTIES[i];
+        return true;
+      }
+    }
+    for (let i = 0; i < MODES.length; i++) {
+      const rect = rowRect(i);
+      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+        startMode(MODES[i].id);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // src/share.ts
+  function shareTitle() {
+    const summary = app.result;
+    if (!summary) return "Harbor Loop — 16 种模式的像素赛车";
+    const mode = modeById(summary.modeId);
+    return `我在 ${mode.name}(${DIFFICULTY_LABEL[summary.difficulty]}) 拿了 ${summary.score} ${summary.scoreUnit}，来超我`;
+  }
+  function shareQuery() {
+    const summary = app.result;
+    if (!summary) return "";
+    return `mode=${summary.modeId}&difficulty=${summary.difficulty}`;
+  }
+  function shareRun() {
+    const api = wx;
+    if (typeof api.shareAppMessage !== "function") return;
+    try {
+      api.shareAppMessage({ title: shareTitle(), query: shareQuery() });
+    } catch (error) {
+    }
+  }
+  function installShareMenu() {
+    var _a, _b;
+    const api = wx;
+    try {
+      (_a = api.showShareMenu) == null ? void 0 : _a.call(api, { withShareTicket: true });
+      (_b = api.onShareAppMessage) == null ? void 0 : _b.call(api, () => ({ title: shareTitle(), query: shareQuery() }));
+    } catch (error) {
+    }
+  }
+
+  // src/screens/result.ts
+  var PANEL_X = 20;
+  var PANEL_W = DESIGN_W - PANEL_X * 2;
+  var PANEL_Y = 372;
+  var PANEL_H = 268;
+  var BUTTONS = [
+    { id: "retry", label: "再来一次", x: PANEL_X, y: 664, w: PANEL_W, h: 52, primary: true },
+    { id: "share", label: "分享成绩", x: PANEL_X, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false },
+    { id: "menu", label: "选择模式", x: PANEL_X + PANEL_W / 2 + 5, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false }
+  ];
+  var OUTCOME_TEXT = {
+    cleared: "目标达成",
+    timeout: "时间到",
+    wrecked: "撞毁",
+    running: ""
+  };
+  var rankingRequested = false;
+  function enterResultScreen() {
+    rankingRequested = false;
+  }
+  function drawResult() {
+    var _a;
+    const summary = app.result;
+    if (!summary) return;
+    const mode = modeById(summary.modeId);
+    ctx.fillStyle = "#0C1A23";
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "700 11px sans-serif";
+    ctx.fillText(DIFFICULTY_LABEL[summary.difficulty], DESIGN_W / 2, 92);
+    ctx.fillStyle = COLORS.text;
+    ctx.font = "900 26px sans-serif";
+    ctx.fillText(mode.name, DESIGN_W / 2, 124);
+    ctx.fillStyle = summary.outcome === "cleared" ? COLORS.accentLight : COLORS.muted;
+    ctx.font = "700 14px sans-serif";
+    ctx.fillText((_a = OUTCOME_TEXT[summary.outcome]) != null ? _a : "", DESIGN_W / 2, 152);
+    ctx.fillStyle = summary.newBest ? COLORS.accentLight : COLORS.text;
+    ctx.font = "900 76px monospace";
+    ctx.fillText(String(summary.score), DESIGN_W / 2, 244);
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "700 12px sans-serif";
+    ctx.fillText(summary.scoreUnit, DESIGN_W / 2, 268);
+    if (summary.newBest) {
+      ctx.fillStyle = COLORS.accent;
+      ctx.font = "900 15px sans-serif";
+      ctx.fillText("NEW BEST!", DESIGN_W / 2, 300);
+    } else if (summary.best !== null) {
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = "700 12px monospace";
+      ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, 300);
+    }
+    drawRankingPanel();
+    drawButtons();
+  }
+  function drawRankingPanel() {
+    roundRect(ctx, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 14);
+    ctx.fillStyle = "rgba(8,17,25,0.66)";
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLORS.buttonEdge;
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = "900 11px sans-serif";
+    ctx.fillText("好友排行榜", PANEL_X + 14, PANEL_Y + 24);
+    ctx.textAlign = "center";
+    if (!leaderboardAvailable()) {
+      ctx.fillStyle = "rgba(247,244,234,0.32)";
+      ctx.font = "600 11px sans-serif";
+      ctx.fillText("好友榜仅在微信小游戏内可用", DESIGN_W / 2, PANEL_Y + PANEL_H / 2);
+      return;
+    }
+    const listY = PANEL_Y + 36;
+    const listH = PANEL_H - 46;
+    if (!rankingRequested) {
+      requestFriendRanking(PANEL_W - 20, listH, DPR);
+      rankingRequested = true;
+    }
+    const shared = sharedCanvas();
+    if (shared) {
+      try {
+        ctx.drawImage(shared, PANEL_X + 10, listY, PANEL_W - 20, listH);
+      } catch (error) {
+      }
+    }
+  }
+  function drawButtons() {
+    for (const button of BUTTONS) {
+      roundRect(ctx, button.x, button.y, button.w, button.h, 14);
+      ctx.fillStyle = button.primary ? COLORS.buttonActive : COLORS.button;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = button.primary ? COLORS.accentLight : COLORS.buttonEdge;
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.fillStyle = button.primary ? COLORS.accentLight : COLORS.text;
+      ctx.font = "900 15px sans-serif";
+      ctx.fillText(button.label, button.x + button.w / 2, button.y + button.h / 2 + 5);
+    }
+  }
+  function handleResultTap(x, y) {
+    for (const button of BUTTONS) {
+      if (x < button.x || x > button.x + button.w) continue;
+      if (y < button.y || y > button.y + button.h) continue;
+      if (button.id === "retry") retryRun();
+      else if (button.id === "menu") openMenu();
+      else shareRun();
+      return true;
+    }
+    return false;
   }
 
   // src/input.ts
@@ -948,6 +2199,19 @@ var HarborLoop = (() => {
   function pointerDown(pointerId, screenX, screenY) {
     const x = screenToDesignX(screenX);
     const y = screenToDesignY(screenY);
+    if (app.screen === "MENU") {
+      handleMenuTap(x, y);
+      return;
+    }
+    if (app.screen === "RESULT") {
+      handleResultTap(x, y);
+      return;
+    }
+    if (x >= BACK_BUTTON.x && x <= BACK_BUTTON.x + BACK_BUTTON.w && y >= BACK_BUTTON.y && y <= BACK_BUTTON.y + BACK_BUTTON.h) {
+      releaseAllPointers();
+      openMenu();
+      return;
+    }
     const control = controlAtDesignPoint(x, y);
     if (control) {
       activePointers.set(pointerId, control.id);
@@ -960,6 +2224,7 @@ var HarborLoop = (() => {
     requestLaneChange(x < DESIGN_W * 0.5 ? 1 : -1);
   }
   function pointerMove(pointerId, screenX, screenY) {
+    if (app.screen !== "PLAYING") return;
     if (!activePointers.has(pointerId)) return;
     const control = controlAtDesignPoint(screenToDesignX(screenX), screenToDesignY(screenY));
     const previous = activePointers.get(pointerId);
@@ -980,27 +2245,32 @@ var HarborLoop = (() => {
     setThrottle(false);
   }
   function isThrottleKey(event) {
-    const key = String(event.key || "").toLowerCase();
+    const key2 = String(event.key || "").toLowerCase();
     const code = String(event.code || "");
     const keyCode = Number(event.keyCode || event.which || 0);
-    return key === "arrowup" || key === "up" || key === "w" || key === " " || key === "spacebar" || code === "ArrowUp" || code === "KeyW" || code === "Space" || keyCode === 38 || keyCode === 87 || keyCode === 32;
+    return key2 === "arrowup" || key2 === "up" || key2 === "w" || key2 === " " || key2 === "spacebar" || code === "ArrowUp" || code === "KeyW" || code === "Space" || keyCode === 38 || keyCode === 87 || keyCode === 32;
   }
   function handleKeyboardInput(event) {
-    const key = String(event.key || "").toLowerCase();
+    if (app.screen !== "PLAYING") return;
+    const key2 = String(event.key || "").toLowerCase();
     const code = String(event.code || "");
     const keyCode = Number(event.keyCode || event.which || 0);
     let handled = false;
-    if (key === "arrowleft" || key === "left" || key === "a" || code === "ArrowLeft" || code === "KeyA" || keyCode === 37 || keyCode === 65) {
+    if (key2 === "arrowleft" || key2 === "left" || key2 === "a" || code === "ArrowLeft" || code === "KeyA" || keyCode === 37 || keyCode === 65) {
       requestLaneChange(1);
       handled = true;
-    } else if (key === "arrowright" || key === "right" || key === "d" || code === "ArrowRight" || code === "KeyD" || keyCode === 39 || keyCode === 68) {
+    } else if (key2 === "arrowright" || key2 === "right" || key2 === "d" || code === "ArrowRight" || code === "KeyD" || keyCode === 39 || keyCode === 68) {
       requestLaneChange(-1);
       handled = true;
     } else if (isThrottleKey(event)) {
       setThrottle(true);
       handled = true;
-    } else if (key === "r" || code === "KeyR" || keyCode === 82) {
-      resetGame();
+    } else if (key2 === "r" || code === "KeyR" || keyCode === 82) {
+      retryRun();
+      handled = true;
+    } else if (key2 === "escape" || code === "Escape" || keyCode === 27) {
+      releaseAllPointers();
+      openMenu();
       handled = true;
     }
     if (handled && typeof event.preventDefault === "function") event.preventDefault();
@@ -1067,130 +2337,26 @@ var HarborLoop = (() => {
   }
   var debugPointerCount = () => activePointers.size;
 
-  // src/theme.ts
-  var COLORS = {
-    water: "#163D52",
-    waterDeep: "#102F42",
-    waterLine: "rgba(255,255,255,0.045)",
-    land: "#A8BE79",
-    landLight: "#C0CF91",
-    landDark: "#7F995F",
-    roadShadow: "rgba(5,14,20,0.48)",
-    roadEdge: "#20282D",
-    curbLight: "#F1E9D7",
-    curbRed: "#D86A59",
-    road: "#626D73",
-    roadHighlight: "rgba(255,255,255,0.045)",
-    lane: "rgba(246,242,226,0.55)",
-    player: "#F05A47",
-    playerLight: "#FF8D73",
-    playerStripe: "#FFF4D8",
-    window: "#C8EDF1",
-    ai: "#161B1E",
-    aiLight: "#31383C",
-    aiWindow: "#69777D",
-    text: "#F7F4EA",
-    muted: "rgba(247,244,234,0.66)",
-    accent: "#57D5CB",
-    accentLight: "#C5FFF7",
-    button: "rgba(8,17,25,0.82)",
-    buttonActive: "rgba(87,213,203,0.30)",
-    buttonDisabled: "rgba(8,17,25,0.42)",
-    buttonEdge: "rgba(247,244,234,0.28)"
-  };
-
-  // src/render/primitives.ts
-  function strokeClosedPath(points, width, color, dash = []) {
+  // src/render/overlays.ts
+  function drawHazardLane() {
+    if (effects.hazardLane < 0) return;
+    const path = pathForLane(effects.hazardLane);
+    strokeClosedPath(path, 7.4, "rgba(255,96,84,0.42)");
+    strokeClosedPath(path, 2.6, "rgba(255,196,120,0.85)", [7, 6]);
+  }
+  function drawBlackout() {
+    if (effects.dim <= 0) return;
     ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-    ctx.closePath();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.setLineDash(dash);
-    ctx.stroke();
+    ctx.globalAlpha = effects.dim;
+    ctx.fillStyle = "#050C12";
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
     ctx.restore();
-  }
-  function roundRect(context, x, y, w, h, r) {
-    const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-    context.beginPath();
-    context.moveTo(x + radius, y);
-    context.arcTo(x + w, y, x + w, y + h, radius);
-    context.arcTo(x + w, y + h, x, y + h, radius);
-    context.arcTo(x, y + h, x, y, radius);
-    context.arcTo(x, y, x + w, y, radius);
-    context.closePath();
-  }
-
-  // src/render/hud.ts
-  function drawHud() {
-    ctx.fillStyle = "rgba(8,17,25,0.66)";
-    roundRect(ctx, 12, 12, 68, 42, 13);
-    ctx.fill();
-    ctx.fillStyle = player.combo > 0 ? COLORS.accentLight : COLORS.text;
-    const tierPulse = player.tierBoostElapsed > 0 ? 1 + Math.sin((PLAYER_TIER_BOOST_DURATION - player.tierBoostElapsed) * Math.PI * 8) * 0.08 : 1;
-    ctx.save();
-    ctx.translate(46, 35);
-    ctx.scale(tierPulse, tierPulse);
-    ctx.font = "900 25px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(`x${player.combo}`, 0, 5);
-    ctx.restore();
-    if (player.state === "CRASHED") {
-      ctx.fillStyle = "rgba(255,79,82,0.92)";
-      roundRect(ctx, 122, 390, 146, 54, 16);
-      ctx.fill();
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font = "900 21px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("CRASH!", 195, 420);
-      ctx.font = "700 9px sans-serif";
-      ctx.fillText("COMBO RESET", 195, 437);
-    }
-  }
-  function drawLaneArrow(cx, cy, direction, color) {
-    const tip = direction > 0 ? -15 : 15;
-    ctx.beginPath();
-    ctx.moveTo(cx + tip, cy);
-    ctx.lineTo(cx - tip * 0.6, cy - 15);
-    ctx.lineTo(cx - tip * 0.6, cy + 15);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-  }
-  function drawControls() {
-    for (const control of CONTROLS) {
-      const active = control.kind === "throttle" ? inputState.throttle : laneButtonFlash[control.id] > 0;
-      const cx = control.x + control.w * 0.5;
-      const cy = control.y + control.h * 0.5;
-      roundRect(ctx, control.x, control.y, control.w, control.h, CONTROL_RADIUS);
-      ctx.fillStyle = COLORS.button;
-      ctx.fill();
-      if (active) {
-        ctx.fillStyle = COLORS.buttonActive;
-        ctx.fill();
-      }
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = active ? COLORS.accentLight : COLORS.buttonEdge;
-      ctx.stroke();
-      const glyph = active ? COLORS.accentLight : COLORS.text;
-      if (control.kind === "lane") {
-        drawLaneArrow(cx, cy, control.direction, glyph);
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - 19);
-        ctx.lineTo(cx - 15, cy);
-        ctx.lineTo(cx + 15, cy);
-        ctx.closePath();
-        ctx.fillStyle = glyph;
-        ctx.fill();
-        ctx.font = "900 13px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("GAS", cx, cy + 21);
-      }
+    if (effects.dim > 0.5) {
+      ctx.save();
+      ctx.globalAlpha = (effects.dim - 0.5) * 0.6;
+      ctx.fillStyle = COLORS.accent;
+      ctx.fillRect(0, DESIGN_H * 0.5 - 1, DESIGN_W, 2);
+      ctx.restore();
     }
   }
 
@@ -1392,19 +2558,101 @@ var HarborLoop = (() => {
     const indicatorOn = car.state === "WARNING" && Math.floor(car.stateElapsed * 30) % 2 === 0;
     drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn);
   }
+  function drawWreck(car) {
+    const p = sampleAtDistance(car.distance, car.visualLane);
+    const t = Math.max(0, Math.min(1, car.wreck));
+    ctx.save();
+    ctx.globalAlpha = t;
+    ctx.translate(p.x, p.y);
+    const radius = 5 + (1 - t) * 12;
+    ctx.fillStyle = "rgba(255,150,72,0.55)";
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(46,30,26,0.75)";
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawZone(car) {
+    const gap = forwardPathDistance(player.distance, car.distance);
+    const engaged = gap > 13 && gap < 66 && Math.abs(player.visualLane - car.visualLane) < 0.7;
+    ctx.save();
+    for (let offset = 16; offset <= 62; offset += 8) {
+      const p = sampleAtDistance(car.distance - offset, car.visualLane);
+      ctx.globalAlpha = engaged ? 0.55 : 0.26;
+      ctx.fillStyle = engaged ? COLORS.accentLight : COLORS.accent;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const head = sampleAtDistance(car.distance, car.visualLane);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(8,17,25,0.7)";
+    ctx.fillRect(head.x - 9, head.y - 11, 18, 3);
+    ctx.fillStyle = COLORS.accent;
+    ctx.fillRect(head.x - 9, head.y - 11, 18 * Math.max(0, Math.min(1, car.zoneFill)), 3);
+    ctx.restore();
+  }
   function playerAlpha() {
     if (player.invincible > 0) return Math.floor(player.invincible * 12) % 2 === 0 ? 0.25 : 1;
     return 1;
   }
+  function drawFireballAura() {
+    if (player.fireball <= 0) return;
+    const p = sampleAtDistance(player.distance, player.visualLane);
+    const pulse = 0.72 + Math.sin(player.travelled * 0.06) * 0.28;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = "rgba(255,164,72,0.75)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 11 + pulse * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = "rgba(255,226,150,0.85)";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7 + pulse * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   function drawCars() {
-    for (const car of aiCars) drawAiCar(car);
+    for (const car of aiCars) {
+      if (!car.alive) {
+        if (car.wreck > 0) drawWreck(car);
+        continue;
+      }
+      if (car.hasZone) drawZone(car);
+      drawAiCar(car);
+    }
+    drawFireballAura();
     drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
   }
 
   // src/scoring.ts
+  var WRECK_SECONDS = 0.9;
+  function destroyCar(car) {
+    var _a, _b;
+    car.alive = false;
+    car.wreck = WRECK_SECONDS;
+    car.hasZone = false;
+    run.destroyed += 1;
+    audio.playSpeedTierUp(Math.min(7, 2 + run.destroyed));
+    vibrate("medium");
+    (_b = (_a = activeMode).onDestroy) == null ? void 0 : _b.call(_a, car, run);
+  }
+  function crash() {
+    var _a, _b;
+    beginCollision();
+    run.crashes += 1;
+    (_b = (_a = activeMode).onCrash) == null ? void 0 : _b.call(_a, run);
+  }
   function detectCollisions() {
+    var _a, _b, _c;
     if (player.invincible > 0 || player.state === "CRASHED") return false;
     for (const car of aiCars) {
+      if (!car.alive) continue;
       const laneDistanceNow = Math.abs(player.visualLane - car.visualLane);
       const laneDistanceBefore = Math.abs(player.previousVisualLane - car.previousVisualLane);
       const laneDistance = Math.min(laneDistanceNow, laneDistanceBefore);
@@ -1414,15 +2662,23 @@ var HarborLoop = (() => {
       const previousPassIndex = Math.floor(previousGap / arc.total);
       const currentPassIndex = Math.floor(currentGap / arc.total);
       const sweptThroughCar = currentPassIndex > previousPassIndex;
-      if (laneDistance <= COLLISION_LANE_DISTANCE && (pathDistance <= COLLISION_PATH_DISTANCE || sweptThroughCar)) {
-        beginCollision();
-        return true;
+      const touching = laneDistance <= COLLISION_LANE_DISTANCE && (pathDistance <= COLLISION_PATH_DISTANCE || sweptThroughCar);
+      if (!touching) continue;
+      const response = (_c = (_b = (_a = activeMode).onContact) == null ? void 0 : _b.call(_a, car, run)) != null ? _c : "crash";
+      if (response === "ignore") continue;
+      if (response === "destroy") {
+        destroyCar(car);
+        continue;
       }
+      crash();
+      return true;
     }
     return false;
   }
   function detectOvertakes() {
+    var _a, _b;
     for (const car of aiCars) {
+      if (!car.alive) continue;
       const currentPassIndex = Math.floor((player.distance - car.distance) / arc.total);
       if (currentPassIndex > car.passIndex) {
         const overtakes = currentPassIndex - car.passIndex;
@@ -1440,6 +2696,7 @@ var HarborLoop = (() => {
           audio.playSpeedTierUp(newTier);
         }
         vibrate(newTier > previousTier ? "medium" : "light");
+        (_b = (_a = activeMode).onOvertake) == null ? void 0 : _b.call(_a, overtakes, run);
       } else if (currentPassIndex < car.passIndex) {
         car.passIndex = currentPassIndex;
       }
@@ -1448,31 +2705,51 @@ var HarborLoop = (() => {
 
   // src/main.ts
   var lastTime = Date.now();
-  function frame(nowValue) {
-    const now = typeof nowValue === "number" ? nowValue : Date.now();
-    const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1e3));
-    lastTime = now;
+  function stepRace(dt) {
     updateControlFlash(dt);
     updateAi(dt);
     updatePlayer(dt);
     audio.update(dt, engineSnapshot());
     const collided = detectCollisions();
     if (!collided) detectOvertakes();
+    updateRun(dt);
+  }
+  function drawRace() {
+    drawBackground();
+    drawTrack();
+    drawHazardLane();
+    drawCars();
+    drawBlackout();
+    drawHud();
+    drawControls();
+  }
+  function frame(nowValue) {
+    const now = typeof nowValue === "number" ? nowValue : Date.now();
+    const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1e3));
+    lastTime = now;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
-    drawBackground();
-    drawTrack();
-    drawCars();
-    drawHud();
-    drawControls();
+    if (app.screen === "PLAYING") {
+      stepRace(dt);
+      drawRace();
+    } else if (app.screen === "MENU") {
+      drawMenu();
+    } else {
+      drawResult();
+    }
     ctx.restore();
+    if (app.screen === "PLAYING" && runIsOver()) {
+      releaseAllPointers();
+      enterResultScreen();
+      finishRun();
+    }
     scheduleFrame(frame);
   }
-  resetGame();
   installInput();
+  installShareMenu();
   if (typeof wx.onHide === "function") {
     wx.onHide(() => {
       releaseAllPointers();

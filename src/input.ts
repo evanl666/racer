@@ -5,11 +5,14 @@
  * while another taps a lane button.
  */
 
+import { app, openMenu, retryRun } from './app';
 import { audio } from './audio';
 import { controlAtDesignPoint, flashLaneButton } from './controls';
 import { canvas, DESIGN_W, screenToDesignX, screenToDesignY, VIEW_H, VIEW_W } from './platform';
 import { requestLaneChange, setThrottle } from './player';
-import { resetGame } from './state';
+import { BACK_BUTTON } from './render/hud';
+import { handleMenuTap } from './screens/menu';
+import { handleResultTap } from './screens/result';
 import type { Control, KeyboardEventLike, PointerEventLike } from './types';
 
 /** pointer id -> what it is currently driving. */
@@ -37,6 +40,24 @@ function pressControl(control: Control): void {
 export function pointerDown(pointerId: number, screenX: number, screenY: number): void {
   const x = screenToDesignX(screenX);
   const y = screenToDesignY(screenY);
+
+  // Menus own the whole screen; driving controls only exist during a run.
+  if (app.screen === 'MENU') {
+    handleMenuTap(x, y);
+    return;
+  }
+  if (app.screen === 'RESULT') {
+    handleResultTap(x, y);
+    return;
+  }
+
+  if (x >= BACK_BUTTON.x && x <= BACK_BUTTON.x + BACK_BUTTON.w &&
+      y >= BACK_BUTTON.y && y <= BACK_BUTTON.y + BACK_BUTTON.h) {
+    releaseAllPointers();
+    openMenu();
+    return;
+  }
+
   const control = controlAtDesignPoint(x, y);
 
   if (control) {
@@ -54,6 +75,7 @@ export function pointerDown(pointerId: number, screenX: number, screenY: number)
 }
 
 export function pointerMove(pointerId: number, screenX: number, screenY: number): void {
+  if (app.screen !== 'PLAYING') return;
   if (!activePointers.has(pointerId)) return;
   const control = controlAtDesignPoint(screenToDesignX(screenX), screenToDesignY(screenY));
   const previous = activePointers.get(pointerId);
@@ -89,6 +111,7 @@ function isThrottleKey(event: KeyboardEventLike): boolean {
 }
 
 function handleKeyboardInput(event: KeyboardEventLike): void {
+  if (app.screen !== 'PLAYING') return;
   const key = String(event.key || '').toLowerCase();
   const code = String(event.code || '');
   const keyCode = Number(event.keyCode || event.which || 0);
@@ -106,7 +129,11 @@ function handleKeyboardInput(event: KeyboardEventLike): void {
     setThrottle(true);
     handled = true;
   } else if (key === 'r' || code === 'KeyR' || keyCode === 82) {
-    resetGame();
+    retryRun();
+    handled = true;
+  } else if (key === 'escape' || code === 'Escape' || keyCode === 27) {
+    releaseAllPointers();
+    openMenu();
     handled = true;
   }
 

@@ -1,14 +1,17 @@
-/** Combo readout, crash banner and the on-screen control bar. */
+/** In-race HUD: combo, clock, score, objective bar, banners and the control bar. */
 
 import { PLAYER_TIER_BOOST_DURATION } from '../config';
 import { CONTROL_RADIUS, CONTROLS, laneButtonFlash } from '../controls';
-import { ctx } from '../platform';
+import { modeById } from '../modes';
+import { ctx, DESIGN_W } from '../platform';
+import { run } from '../run';
 import { inputState, player } from '../state';
 import { COLORS } from '../theme';
 import { roundRect } from './primitives';
 
-export function drawHud(): void {
-  // Keep the track unobstructed: only a compact combo readout remains in one corner.
+export const BACK_BUTTON = { x: DESIGN_W - 52, y: 12, w: 40, h: 40 };
+
+function drawComboPill(): void {
   ctx.fillStyle = 'rgba(8,17,25,0.66)';
   roundRect(ctx, 12, 12, 68, 42, 13);
   ctx.fill();
@@ -23,18 +26,96 @@ export function drawHud(): void {
   ctx.textAlign = 'center';
   ctx.fillText(`x${player.combo}`, 0, 5);
   ctx.restore();
+}
 
-  if (player.state === 'CRASHED') {
-    ctx.fillStyle = 'rgba(255,79,82,0.92)';
-    roundRect(ctx, 122, 390, 146, 54, 16);
+function drawClockAndScore(): void {
+  const mode = modeById(run.modeId);
+
+  if (Number.isFinite(run.timeRemaining)) {
+    const urgent = run.timeRemaining <= 10;
+    ctx.fillStyle = 'rgba(8,17,25,0.66)';
+    roundRect(ctx, 88, 12, 74, 42, 13);
     ctx.fill();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '900 21px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('CRASH!', 195, 420);
-    ctx.font = '700 9px sans-serif';
-    ctx.fillText('COMBO RESET', 195, 437);
+    ctx.fillStyle = urgent ? '#FF7A6B' : COLORS.text;
+    ctx.font = '900 22px monospace';
+    ctx.fillText(run.timeRemaining.toFixed(1), 125, 41);
   }
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = COLORS.accentLight;
+  ctx.font = '900 20px monospace';
+  ctx.fillText(String(run.score), DESIGN_W - 60, 34);
+  ctx.fillStyle = COLORS.muted;
+  ctx.font = '700 8px sans-serif';
+  ctx.fillText(mode.scoreUnit, DESIGN_W - 60, 46);
+  ctx.textAlign = 'center';
+}
+
+function drawBackButton(): void {
+  roundRect(ctx, BACK_BUTTON.x, BACK_BUTTON.y, BACK_BUTTON.w, BACK_BUTTON.h, 12);
+  ctx.fillStyle = COLORS.button;
+  ctx.fill();
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = COLORS.buttonEdge;
+  ctx.stroke();
+
+  // Two bars: a pause glyph, which reads as "stop this run" without any text.
+  ctx.fillStyle = COLORS.text;
+  ctx.fillRect(BACK_BUTTON.x + 14, BACK_BUTTON.y + 12, 4, 16);
+  ctx.fillRect(BACK_BUTTON.x + 22, BACK_BUTTON.y + 12, 4, 16);
+}
+
+function drawObjectiveBar(): void {
+  if (run.progress < 0) return;
+  const x = 12;
+  const y = 62;
+  const w = DESIGN_W - 24;
+  const h = 6;
+
+  roundRect(ctx, x, y, w, h, 3);
+  ctx.fillStyle = 'rgba(8,17,25,0.66)';
+  ctx.fill();
+
+  const filled = Math.max(0, Math.min(1, run.progress));
+  if (filled > 0) {
+    roundRect(ctx, x, y, w * filled, h, 3);
+    ctx.fillStyle = COLORS.accent;
+    ctx.fill();
+  }
+}
+
+function drawBanner(): void {
+  if (!run.banner || run.bannerTimer <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, run.bannerTimer * 2.4);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.accentLight;
+  ctx.font = '900 26px sans-serif';
+  ctx.fillText(run.banner, DESIGN_W / 2, 372);
+  ctx.restore();
+}
+
+function drawCrashBanner(): void {
+  if (player.state !== 'CRASHED') return;
+  ctx.fillStyle = 'rgba(255,79,82,0.92)';
+  roundRect(ctx, 122, 390, 146, 54, 16);
+  ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '900 21px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CRASH!', 195, 420);
+  ctx.font = '700 9px sans-serif';
+  ctx.fillText('COMBO RESET', 195, 437);
+}
+
+export function drawHud(): void {
+  drawComboPill();
+  drawClockAndScore();
+  drawBackButton();
+  drawObjectiveBar();
+  drawCrashBanner();
+  drawBanner();
 }
 
 function drawLaneArrow(cx: number, cy: number, direction: number, color: string): void {
@@ -72,6 +153,14 @@ export function drawControls(): void {
     if (control.kind === 'lane') {
       drawLaneArrow(cx, cy, control.direction, glyph);
     } else {
+      // The throttle doubles as the heat gauge in Hot Rods.
+      if (player.heat > 0) {
+        const heatH = (control.h - 8) * Math.min(1, player.heat);
+        roundRect(ctx, control.x + 4, control.y + control.h - 4 - heatH, control.w - 8, heatH, 12);
+        ctx.fillStyle = player.heat > 0.75 ? 'rgba(255,110,90,0.42)' : 'rgba(255,181,90,0.26)';
+        ctx.fill();
+      }
+
       ctx.beginPath();
       ctx.moveTo(cx, cy - 19);
       ctx.lineTo(cx - 15, cy);

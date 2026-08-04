@@ -84,8 +84,8 @@ const RIGHT_BTN = touch(3, 142, 774);
 const TRACK_POINT = touch(4, 100, 300);
 
 /** Empty traffic makes throttle and lane assertions deterministic. */
-function resetWithoutTraffic() {
-  game.resetGame();
+function resetWithoutTraffic(modeId = 'sunday-drivers') {
+  game.startMode(modeId);
   game.aiCars.length = 0;
   fire('cancel', [THROTTLE, LEFT_BTN, RIGHT_BTN, TRACK_POINT]);
   step(0.02);
@@ -98,6 +98,7 @@ const check = (name, pass, detail = '') => results.push({ name, pass: Boolean(pa
 resetWithoutTraffic();
 check('idle: throttle off', game.inputState.throttle === false);
 check('idle: cruises at tier-0 speed', Math.abs(game.player.speed - 125) < 1, `speed=${game.player.speed.toFixed(1)}`);
+check('starting a mode enters the race screen', game.app.screen === 'PLAYING', game.app.screen);
 
 fire('start', [THROTTLE]);
 step(0.05);
@@ -175,7 +176,7 @@ fire('move', [touch(99, 10, 10)]);
 check('unknown pointer ids are ignored', game.debugPointerCount() === 0);
 
 // --- full simulation with traffic ----------------------------------------
-game.resetGame();
+game.startMode('combo-racers');
 let threw = null;
 try {
   fire('start', [THROTTLE]);

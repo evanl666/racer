@@ -1,6 +1,44 @@
-# Harbor Loop V0.9.6 — TypeScript 模块化
+# Harbor Loop V0.10.0 — 16 种模式 + 好友排行榜
 
 微信小游戏 / 浏览器玩法原型。原生 Canvas 2D，无游戏引擎依赖。
+
+## V0.10.0 本版重点
+
+从单一玩法扩展成 **16 个模式 × 3 个难度 = 48 个独立排行榜**，加入模式选择、结算页、成绩存档、微信好友排行榜和分享。
+
+### 模式
+
+前 7 个是 Q-Games《PixelJunk Racers》有公开资料记载的模式（菜单里带 `PJ` 标记）；
+后 9 个没有任何公开资料记载具体规则，是用同样的"换道 / 油门 / 超车"三个动词原创的。
+
+| 模式 | 来源 | 规则 |
+|---|---|---|
+| SPEED MONKEY | PJ | 速度只增不减，撞一次就结束 |
+| COMBO RACERS | PJ | 限时 60 秒把 Combo 冲到 40，撞车清零 |
+| SUNDAY DRIVERS | PJ | 车流极慢，限时超越尽可能多的车 |
+| FIREBALL FRENZY | PJ | 每 10 次超车化身火球，火球状态撞车即摧毁 |
+| DEATH RACE | PJ | 限时 90 秒撞毁场上全部车辆 |
+| IN THE ZONE | PJ | 跟住 6 辆标记车的尾流区域，待满即清除 |
+| HOT RODS | PJ | 油门会过热，限时跑出最远距离 |
+| SLIPSTREAM | 原创 | 贴住前车蓄力，满蓄时超车得双倍分 |
+| GHOST LANE | 原创 | 每隔几秒一条车道带电，提前 1.2 秒预警 |
+| RUSH HOUR | 原创 | 车流持续提速 |
+| PACE SETTER | 原创 | 把车速保持在移动的目标区间内 |
+| LAST MAN | 原创 | 对手每 4 秒自爆一辆，车越少分越难拿 |
+| CHAIN REACTION | 原创 | 5 次超车装填，每次摧毁刷新 3.2 秒窗口 |
+| BLACKOUT | 原创 | 每 7 秒熄灯 2 秒，靠记忆穿过车流 |
+| TIME ATTACK | 原创 | 跑完 3 圈，用时越短越好 |
+| ENDURANCE | 原创 | 无时间限制，一条命，车流永远在加速 |
+
+难度 `NORMAL / TURBO / MASTER` 只改变整体速度（1.0 / 1.25 / 1.5 倍），玩家和车流同步缩放。
+
+### 排行榜与分享
+
+- 每个（模式 × 难度）单独记录个人最好成绩，存在本地。
+- 全部最好成绩之和作为"生涯积分"，通过 `wx.setUserCloudStorage` 上传。
+- 好友排行榜由开放数据域子包 `openDataContext/` 渲染，结算页直接贴上共享画布。
+- 结算页有分享按钮；分享卡片标题带上模式、难度和成绩。
+- 以上三项都只在微信小游戏内生效，浏览器预览会自动降级。
 
 ## 开发
 
@@ -21,7 +59,12 @@ npm run verify    # check + test
 
 | 路径 | 内容 |
 |---|---|
-| `src/main.ts` | 入口：帧循环和模块装配 |
+| `src/main.ts` | 入口：帧循环和三个界面的切换 |
+| `src/app.ts` | 界面状态机：菜单 / 比赛 / 结算 |
+| `src/modes/` | 16 个模式，一个模式一个文件 + 注册表 |
+| `src/run.ts` | 单局生命周期：开始、计时、判定结束 |
+| `src/screens/` | 模式选择和结算界面 |
+| `src/storage.ts` `src/leaderboard.ts` `src/share.ts` | 成绩存档、好友榜、分享 |
 | `src/platform.ts` | 唯一直接调用 `wx` 的模块；画布、缩放、震动、音频上下文 |
 | `src/config.ts` | 全部玩法数值（车道、速度档、AI、碰撞） |
 | `src/track.ts` | 赛道几何与沿路面推进的距离计算 |
@@ -30,6 +73,7 @@ npm run verify    # check + test
 | `src/input.ts` `src/controls.ts` | 触摸/键盘输入、屏幕按键布局 |
 | `src/audio.ts` | 程序合成音频（通过快照解耦，不依赖游戏状态） |
 | `src/render/` | 绘制：primitives / scenery / road / vehicles / hud |
+| `openDataContext/` | 开放数据域子包，独立 JS 环境，只负责画好友榜 |
 | `tests/` | Node vm 里的无头测试，模拟微信触摸事件 |
 
 ## V0.9.5 重点

@@ -3,7 +3,7 @@
 import { ctx } from '../platform';
 import { aiCars, player } from '../state';
 import { COLORS } from '../theme';
-import { sampleAtDistance } from '../track';
+import { forwardPathDistance, sampleAtDistance } from '../track';
 import type { AiCar, VehicleStyle } from '../types';
 import { roundRect } from './primitives';
 
@@ -78,12 +78,79 @@ function drawAiCar(car: AiCar): void {
   drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn);
 }
 
+/** A destroyed car briefly leaves a scorch mark so the kill reads on screen. */
+function drawWreck(car: AiCar): void {
+  const p = sampleAtDistance(car.distance, car.visualLane);
+  const t = Math.max(0, Math.min(1, car.wreck));
+  ctx.save();
+  ctx.globalAlpha = t;
+  ctx.translate(p.x, p.y);
+  const radius = 5 + (1 - t) * 12;
+  ctx.fillStyle = 'rgba(255,150,72,0.55)';
+  ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(46,30,26,0.75)';
+  ctx.beginPath(); ctx.arc(0, 0, radius * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * In The Zone marks a slipstream box trailing the car. It is drawn as a bar in
+ * the lane rather than a shape on the road so it stays readable at speed.
+ */
+function drawZone(car: AiCar): void {
+  const gap = forwardPathDistance(player.distance, car.distance);
+  const engaged = gap > 13 && gap < 66 && Math.abs(player.visualLane - car.visualLane) < 0.7;
+
+  ctx.save();
+  for (let offset = 16; offset <= 62; offset += 8) {
+    const p = sampleAtDistance(car.distance - offset, car.visualLane);
+    ctx.globalAlpha = engaged ? 0.55 : 0.26;
+    ctx.fillStyle = engaged ? COLORS.accentLight : COLORS.accent;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Fill meter rides just above the marked car.
+  const head = sampleAtDistance(car.distance, car.visualLane);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(8,17,25,0.7)';
+  ctx.fillRect(head.x - 9, head.y - 11, 18, 3);
+  ctx.fillStyle = COLORS.accent;
+  ctx.fillRect(head.x - 9, head.y - 11, 18 * Math.max(0, Math.min(1, car.zoneFill)), 3);
+  ctx.restore();
+}
+
 function playerAlpha(): number {
   if (player.invincible > 0) return Math.floor(player.invincible * 12) % 2 === 0 ? 0.25 : 1;
   return 1;
 }
 
+/** The armed car gets a halo so the "contact is a kill now" state is unmissable. */
+function drawFireballAura(): void {
+  if (player.fireball <= 0) return;
+  const p = sampleAtDistance(player.distance, player.visualLane);
+  const pulse = 0.72 + Math.sin(player.travelled * 0.06) * 0.28;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = 'rgba(255,164,72,0.75)';
+  ctx.beginPath(); ctx.arc(0, 0, 11 + pulse * 3, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = 'rgba(255,226,150,0.85)';
+  ctx.beginPath(); ctx.arc(0, 0, 7 + pulse * 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 export function drawCars(): void {
-  for (const car of aiCars) drawAiCar(car);
+  for (const car of aiCars) {
+    if (!car.alive) {
+      if (car.wreck > 0) drawWreck(car);
+      continue;
+    }
+    if (car.hasZone) drawZone(car);
+    drawAiCar(car);
+  }
+  drawFireballAura();
   drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
 }

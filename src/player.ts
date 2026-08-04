@@ -6,12 +6,11 @@ import {
   LANE_COUNT,
   PLAYER_ACCELERATION,
   PLAYER_COAST_DECELERATION,
-  PLAYER_CRUISE_BASE_SPEED,
   PLAYER_TIER_ACCELERATION
 } from './config';
 import { moveToward } from './mathUtil';
 import { vibrate } from './platform';
-import { currentTargetSpeed, inputState, player } from './state';
+import { baseCruiseSpeed, currentTargetSpeed, inputState, player } from './state';
 import { advanceDistanceAtRoadSpeed } from './track';
 
 function laneInputStateAllows(): boolean {
@@ -60,6 +59,8 @@ export function updatePlayer(dt: number): void {
   player.invincible = Math.max(0, player.invincible - dt);
   player.tierBoostElapsed = Math.max(0, player.tierBoostElapsed - dt);
   player.passPopElapsed += dt;
+  // Death Race arms the car with an infinite timer, which must stay infinite.
+  if (Number.isFinite(player.fireball)) player.fireball = Math.max(0, player.fireball - dt);
 
   if (player.laneChangeElapsed > 0) {
     player.laneChangeElapsed += dt;
@@ -83,9 +84,9 @@ export function updatePlayer(dt: number): void {
   } else if (player.state === 'RECOVERING') {
     player.stateElapsed += dt;
     const t = Math.min(1, player.stateElapsed / 0.70);
-    player.speed = PLAYER_CRUISE_BASE_SPEED * t;
+    player.speed = baseCruiseSpeed() * t;
     if (t >= 1) {
-      player.speed = PLAYER_CRUISE_BASE_SPEED;
+      player.speed = baseCruiseSpeed();
       player.state = 'NORMAL';
       player.stateElapsed = 0;
     }
@@ -97,5 +98,12 @@ export function updatePlayer(dt: number): void {
   }
 
   // Keep an unwrapped distance for reliable lap/overtake detection.
+  const before = player.distance;
   player.distance = advanceDistanceAtRoadSpeed(player.distance, player.speed, dt, player.visualLane);
+  player.travelled += Math.max(0, player.distance - before);
+}
+
+/** Fireball state is what turns a contact into a kill. */
+export function playerIsArmed(): boolean {
+  return player.fireball > 0;
 }

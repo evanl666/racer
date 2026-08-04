@@ -1,5 +1,19 @@
 # Harbor Loop Development Notes
 
+## V0.10.0 — 16 modes, mode select, friend leaderboard
+
+- 玩法从单一模式扩展为 16 个模式 × 3 个难度；难度只缩放速度（1.0 / 1.25 / 1.5），玩家和车流同步。
+- 前 7 个模式（Speed Monkey / Combo Racers / Sunday Drivers / Fireball Frenzy / Death Race / In The Zone / Hot Rods）依据 PixelJunk Racers 的公开资料实现；其余 9 个公开资料没有记载规则，为原创，菜单和 README 都标注了来源。
+- 新增 `ModeDefinition` 契约：模式通过 `setup / update / onOvertake / onContact / onDestroy / onCrash / cleared / failed` 钩子改写规则。碰撞几何仍在 `scoring.ts`，但"碰撞意味着什么"（撞毁 / 摧毁 / 无视）改由当前模式决定。
+- 新增界面状态机 `app.ts`：菜单 / 比赛 / 结算。输入按界面路由，比赛中右上角有暂停返回键，键盘 `R` 重开、`Esc` 回菜单。
+- 车辆增加 `alive / wreck / hasZone / zoneFill`，玩家增加 `fireball / heat / travelled`，支持摧毁、尾流区域、火球和过热。
+- 新增全屏效果模块 `effects.ts`：Ghost Lane 的带电车道和 Blackout 的熄灯由模式驱动，渲染层只读取。
+- 每个（模式 × 难度）单独存最好成绩；全部成绩之和作为生涯积分，通过 `wx.setUserCloudStorage` 上传。
+- 新增开放数据域子包 `openDataContext/`，独立 JS 环境渲染好友排行榜（含头像、昵称、自己高亮），主上下文把共享画布贴到结算页。该目录不经 esbuild 打包。
+- 结算页和下拉菜单都挂了分享，卡片标题带模式、难度和成绩，`query` 让点开的人直接进同一模式。
+- 微信之外（浏览器预览）好友榜和分享自动降级为空实现，不影响运行。
+- 测试拆出共享 harness，新增 `tests/modes.test.mjs`：16 个模式全部跑到终局并断言分数有效，另有难度缩放、Death Race 摧毁、Hot Rods 过热、In The Zone 标记数、菜单点击、成绩存档等断言。两个测试文件共 91 项。
+
 ## V0.9.6 — TypeScript 重构与模块拆分
 
 **玩法没有任何改动**，这一版只动工程结构，为后续加排行榜、结算页、皮肤等内容做准备。

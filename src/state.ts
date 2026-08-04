@@ -12,6 +12,7 @@ import {
   SPEED_TIER_CRUISE,
   SPEED_TIER_THROTTLE
 } from './config';
+import { tuning } from './difficulty';
 import { arc } from './track';
 import type { AiCar, EngineSnapshot, Player } from './types';
 
@@ -39,7 +40,10 @@ export const player: Player = {
   tierBoostElapsed: 0,
   previousDistance: 0,
   previousVisualLane: STARTING_LANE,
-  collisionCount: 0
+  collisionCount: 0,
+  fireball: 0,
+  heat: 0,
+  travelled: 0
 };
 
 export let aiCars: AiCar[] = [];
@@ -51,7 +55,7 @@ export function resetGame(): void {
   player.laneFrom = STARTING_LANE;
   player.laneTo = STARTING_LANE;
   player.laneChangeElapsed = 0;
-  player.speed = PLAYER_CRUISE_BASE_SPEED;
+  player.speed = baseCruiseSpeed();
   inputState.throttle = false;
   player.state = 'NORMAL';
   player.stateElapsed = 0;
@@ -64,9 +68,13 @@ export function resetGame(): void {
   player.previousDistance = player.distance;
   player.previousVisualLane = player.visualLane;
   player.collisionCount = 0;
+  player.fireball = 0;
+  player.heat = 0;
+  player.travelled = 0;
 
   aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
     const distance = arc.total * blueprint.fraction;
+    const baseSpeed = blueprint.speed * tuning.traffic;
     return {
       id: index,
       distance,
@@ -74,17 +82,30 @@ export function resetGame(): void {
       visualLane: blueprint.lane,
       laneFrom: blueprint.lane,
       laneTo: blueprint.lane,
-      baseSpeed: blueprint.speed,
-      speed: blueprint.speed,
+      baseSpeed,
+      speed: baseSpeed,
       previousDistance: distance,
       previousVisualLane: blueprint.lane,
       state: 'IDLE',
       stateElapsed: 0,
       direction: 0,
       decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
-      passIndex: Math.floor((player.distance - distance) / arc.total)
+      passIndex: Math.floor((player.distance - distance) / arc.total),
+      alive: true,
+      wreck: 0,
+      hasZone: false,
+      zoneFill: 0
     };
   });
+}
+
+export function livingCars(): AiCar[] {
+  return aiCars.filter((car) => car.alive);
+}
+
+/** Tier-0 cruise speed for the active difficulty. */
+export function baseCruiseSpeed(): number {
+  return PLAYER_CRUISE_BASE_SPEED * tuning.player;
 }
 
 export function currentSpeedTier(combo: number = player.combo): number {
@@ -92,11 +113,11 @@ export function currentSpeedTier(combo: number = player.combo): number {
 }
 
 export function currentCruiseSpeed(): number {
-  return SPEED_TIER_CRUISE[currentSpeedTier()];
+  return SPEED_TIER_CRUISE[currentSpeedTier()] * tuning.player;
 }
 
 export function currentThrottleMaxSpeed(): number {
-  return SPEED_TIER_THROTTLE[currentSpeedTier()];
+  return SPEED_TIER_THROTTLE[currentSpeedTier()] * tuning.player;
 }
 
 export function currentTargetSpeed(): number {
@@ -111,7 +132,7 @@ export function engineSnapshot(): EngineSnapshot {
     speed: player.speed,
     cruiseSpeed: currentCruiseSpeed(),
     throttleMaxSpeed: currentThrottleMaxSpeed(),
-    maxSpeed: PLAYER_MAX_SPEED,
+    maxSpeed: PLAYER_MAX_SPEED * tuning.player,
     state: player.state
   };
 }

@@ -11,17 +11,16 @@ import {
   AI_PLAYER_SAFETY_PER_SPEED,
   AI_WARNING_DURATION,
   LANE_COUNT,
-  MAX_SIMULTANEOUS_AI_ACTIONS,
-  PLAYER_CRUISE_BASE_SPEED
+  MAX_SIMULTANEOUS_AI_ACTIONS
 } from './config';
-import { aiCars, player } from './state';
+import { aiCars, baseCruiseSpeed, player } from './state';
 import { advanceDistanceAtRoadSpeed, circularDistance, forwardPathDistance } from './track';
 import type { AiCar } from './types';
 
 // At cruise speed, AI cars keep a modest no-lane-change zone in front of the player.
 // As the red car accelerates, this zone grows so high-speed runs remain readable and fair.
 export function currentAiPlayerSafetyDistance(): number {
-  const speedExtra = Math.max(0, player.speed - PLAYER_CRUISE_BASE_SPEED) * AI_PLAYER_SAFETY_PER_SPEED;
+  const speedExtra = Math.max(0, player.speed - baseCruiseSpeed()) * AI_PLAYER_SAFETY_PER_SPEED;
   return Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
 }
 
@@ -37,7 +36,7 @@ function playerIsApproachingAi(car: AiCar): boolean {
 function countActiveAiLaneChanges(): number {
   let count = 0;
   for (const car of aiCars) {
-    if (car.state === 'WARNING' || car.state === 'CHANGING') count += 1;
+    if (car.alive && (car.state === 'WARNING' || car.state === 'CHANGING')) count += 1;
   }
   return count;
 }
@@ -46,7 +45,7 @@ function nearestAiAhead(car: AiCar, lane: number, maxDistance = 90): { car: AiCa
   let nearest: AiCar | null = null;
   let nearestDistance = maxDistance;
   for (const other of aiCars) {
-    if (other === car || Math.abs(other.visualLane - lane) > 0.55) continue;
+    if (other === car || !other.alive || Math.abs(other.visualLane - lane) > 0.55) continue;
     const distance = forwardPathDistance(car.distance, other.distance);
     if (distance > 0.1 && distance < nearestDistance) {
       nearest = other;
@@ -58,7 +57,7 @@ function nearestAiAhead(car: AiCar, lane: number, maxDistance = 90): { car: AiCa
 
 function isAiTargetLaneClear(car: AiCar, targetLane: number): boolean {
   for (const other of aiCars) {
-    if (other === car || Math.abs(other.visualLane - targetLane) > 0.62) continue;
+    if (other === car || !other.alive || Math.abs(other.visualLane - targetLane) > 0.62) continue;
     if (circularDistance(car.distance, other.distance) < AI_LANE_CLEAR_DISTANCE) return false;
   }
 
@@ -99,6 +98,11 @@ function tryBeginAiLaneChange(car: AiCar): boolean {
 
 export function updateAi(dt: number): void {
   for (const car of aiCars) {
+    if (!car.alive) {
+      // Wrecks linger for a moment as debris, then stop being drawn entirely.
+      car.wreck = Math.max(0, car.wreck - dt);
+      continue;
+    }
     car.previousDistance = car.distance;
     car.previousVisualLane = car.visualLane;
     car.decisionTimer -= dt;

@@ -170,6 +170,54 @@ game.startMode('in-the-zone');
 const zoned = game.aiCars.filter((car) => car.hasZone).length;
 check('In The Zone marks six cars', zoned === 6, `marked=${zoned}`);
 
+// --- game feel -------------------------------------------------------------
+// Near misses should happen naturally in dense traffic, and each one grants a
+// short acceleration boost so the risky line is genuinely faster.
+game.app.difficulty = 'master';
+game.startMode('sunday-drivers');
+fire('start', [THROTTLE]);
+step(45);
+fire('cancel', [THROTTLE]);
+check('close calls are detected in traffic', game.run.closeCalls > 0, `close=${game.run.closeCalls}`);
+game.app.difficulty = 'normal';
+
+// A crash must produce particles, a freeze and a shake. Combo Racers survives a
+// crash, so the effects can be watched decaying instead of the run ending.
+game.startMode('combo-racers');
+step(0.2);
+const beforeCrash = game.player.distance;
+game.aiCars.length = 1;
+// Park a car directly on top of the player to force contact.
+game.aiCars[0].distance = game.player.distance + 6;
+game.aiCars[0].lane = game.player.lane;
+game.aiCars[0].visualLane = game.player.visualLane;
+game.aiCars[0].alive = true;
+step(0.05);
+const feel = game.feelState();
+check('a crash spawns particles', game.activeParticles() > 0, `${game.activeParticles()} particles`);
+check('a crash triggers hit-stop', feel.hitStop > 0, `hitStop=${feel.hitStop.toFixed(3)}`);
+check('a crash shakes the screen', feel.shake > 0, `shake=${feel.shake.toFixed(1)}`);
+
+// During hit-stop the world must hold still.
+const frozenAt = game.player.distance;
+step(0.016);
+check('hit-stop freezes the simulation', game.player.distance === frozenAt,
+  `${frozenAt.toFixed(2)} -> ${game.player.distance.toFixed(2)}`);
+void beforeCrash;
+
+// Both effects decay rather than sticking.
+step(1.2);
+const settled = game.feelState();
+check('hit-stop clears', settled.hitStop === 0);
+check('shake settles', settled.shake === 0);
+check('particles die out', game.activeParticles() === 0, `${game.activeParticles()} left`);
+
+// Ending a run mid-freeze must not carry the effects into the next one.
+game.startMode('speed-monkey');
+check('a new run starts with no particles', game.activeParticles() === 0);
+check('a new run starts with no hit-stop or shake',
+  game.feelState().hitStop === 0 && game.feelState().shake === 0);
+
 // --- menu, results and persistence ----------------------------------------
 game.openMenu();
 check('menu is reachable again', game.app.screen === 'MENU');

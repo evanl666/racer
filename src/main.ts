@@ -20,11 +20,14 @@ import { updateAi } from './ai';
 import { app, finishRun } from './app';
 import { audio } from './audio';
 import { updateControlFlash } from './controls';
+import { consumeHitStop, shakeOffsetX, shakeOffsetY, updateFeel } from './feel';
 import { installInput, releaseAllPointers } from './input';
 import { ctx, DPR, offsetX, offsetY, scale, scheduleFrame, VIEW_H, VIEW_W } from './platform';
 import { updatePlayer } from './player';
 import { drawControls, drawHud } from './render/hud';
 import { drawBlackout, drawHazardLane } from './render/overlays';
+import { drawParticles, updateParticles } from './render/particles';
+import { drawSpeedLines } from './render/speedLines';
 import { drawStaticScene } from './render/staticLayer';
 import { drawCars } from './render/vehicles';
 import { runIsOver, updateRun } from './run';
@@ -38,14 +41,22 @@ let lastTime = Date.now();
 
 function stepRace(dt: number): void {
   updateControlFlash(dt);
-  updateAi(dt);
-  updatePlayer(dt);
-  audio.update(dt, engineSnapshot());
+  updateFeel(dt);
+  updateParticles(dt);
+
+  // Hit-stop returns zero simulation time, so the world holds still for a beat
+  // while the particles and the shake keep playing.
+  const simDt = consumeHitStop(dt);
+  if (simDt <= 0) return;
+
+  updateAi(simDt);
+  updatePlayer(simDt);
+  audio.update(simDt, engineSnapshot());
 
   const collided = detectCollisions();
   if (!collided) detectOvertakes();
 
-  updateRun(dt);
+  updateRun(simDt);
 }
 
 /** The static scene is blitted first, then only the moving parts are drawn. */
@@ -53,10 +64,18 @@ function drawRace(): void {
   drawStaticScene();
 
   ctx.save();
-  ctx.translate(offsetX, offsetY);
+  // The shake displaces the world but not the HUD, which would look like a bug.
+  ctx.translate(offsetX + shakeOffsetX(), offsetY + shakeOffsetY());
   ctx.scale(scale, scale);
   drawHazardLane();
+  drawSpeedLines();
   drawCars();
+  drawParticles();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
   drawBlackout();
   drawHud();
   drawControls();
@@ -121,6 +140,8 @@ export { trackLength } from './track';
 export { MODES } from './modes';
 export { laneButtonFlash } from './controls';
 export { debugPointerCount } from './input';
+export { feelState } from './feel';
+export { activeParticles } from './render/particles';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';
 export { totalStars, starsFor, modeUnlocked, modeUnlockCost, difficultyUnlocked, setUnlockOverride } from './progress';

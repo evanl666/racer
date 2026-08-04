@@ -108,6 +108,14 @@ class AudioEngine {
   private enginePulsePhase = 0;
   private effectDuck = 0;
   private voices: Voice[] = [];
+  /** One-shot nodes that decay on their own schedule (the crash noise burst). */
+  private transients: Array<{
+    nodes: Array<{ stop?: (when: number) => void; disconnect?: () => void }>;
+    gain: GainNode;
+    elapsed: number;
+    duration: number;
+    volume: number;
+  }> = [];
 
   ensureStarted(): boolean {
     if (this.disabled) return false;
@@ -252,6 +260,52 @@ class AudioEngine {
     this.addTone('sine', 0.046, baseFrequency * 1.45, baseFrequency * 1.49, volume * 0.12);
   }
 
+  /**
+   * Crash. A filtered noise burst plus a low body thud: the noise carries the
+   * scrape, the sine carries the mass. Crashes used to be silent, which cost
+   * most of the perceived impact.
+   */
+  playCrash(): void {
+    if (!this.ensureStarted()) return;
+    const context = this.context;
+    const masterGain = this.masterGain;
+    if (!context || !masterGain) return;
+
+    this.effectDuck = Math.max(this.effectDuck, 0.85);
+
+    try {
+      const noise = createLoopingNoiseSource(context);
+      if (noise) {
+        const filter = context.createBiquadFilter();
+        const gain = context.createGain();
+        try { filter.type = 'bandpass'; } catch (error) { /* default filter */ }
+        setAudioParam(filter.frequency, 1500);
+        setAudioParam(filter.Q, 0.7);
+        setAudioParam(gain.gain, 0.30);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(masterGain);
+        safelyStartNode(noise);
+
+        // Hand-rolled decay: the mini game WebAudio surface does not reliably
+        // support scheduled ramps, so the update loop tears these down instead.
+        this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.30 });
+      }
+    } catch (error) {
+      /* the crash must still happen without its sound */
+    }
+
+    this.addTone('triangle', 0.30, 116, 44, 0.34);
+    this.addTone('sawtooth', 0.16, 220, 70, 0.12);
+  }
+
+  /** Close call: a short upward whoosh, distinct from the overtake blip. */
+  playCloseCall(): void {
+    this.effectDuck = Math.max(this.effectDuck, 0.3);
+    this.addTone('sine', 0.20, 520, 1500, 0.052);
+    this.addTone('triangle', 0.13, 260, 700, 0.028);
+  }
+
   playSpeedTierUp(tier: number): void {
     // A restrained mechanical surge marks x10/x20/... without becoming a melody.
     const start = Math.min(250, 118 + tier * 9);
@@ -310,6 +364,17 @@ class AudioEngine {
     setAudioParam(this.engineFilter?.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
     setAudioParam(this.engineNoiseFilter?.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
     setAudioParam(this.engineNoiseGain?.gain, (0.003 + revAmount * 0.010 + speedRatio * 0.009) * duck);
+
+    for (let index = this.transients.length - 1; index >= 0; index--) {
+      const transient = this.transients[index];
+      transient.elapsed += dt;
+      const t = clamp(transient.elapsed / transient.duration, 0, 1);
+      setAudioParam(transient.gain.gain, Math.max(0.0001, transient.volume * Math.pow(1 - t, 2.2)));
+      if (t >= 1) {
+        for (const node of transient.nodes) safelyStopNode(node);
+        this.transients.splice(index, 1);
+      }
+    }
 
     for (let index = this.voices.length - 1; index >= 0; index--) {
       const voice = this.voices[index];

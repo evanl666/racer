@@ -41,12 +41,14 @@ var HarborLoop = (() => {
   __export(main_exports, {
     MODES: () => MODES,
     TRACKS: () => TRACKS,
+    activeParticles: () => activeParticles,
     aiCars: () => aiCars,
     app: () => app,
     bestScore: () => bestScore,
     careerPoints: () => careerPoints,
     debugPointerCount: () => debugPointerCount,
     difficultyUnlocked: () => difficultyUnlocked,
+    feelState: () => feelState,
     inputState: () => inputState,
     laneButtonFlash: () => laneButtonFlash,
     modeUnlockCost: () => modeUnlockCost,
@@ -1080,6 +1082,8 @@ var HarborLoop = (() => {
       this.enginePulsePhase = 0;
       this.effectDuck = 0;
       this.voices = [];
+      /** One-shot nodes that decay on their own schedule (the crash noise burst). */
+      this.transients = [];
     }
     ensureStarted() {
       if (this.disabled) return false;
@@ -1221,6 +1225,46 @@ var HarborLoop = (() => {
       this.addTone("triangle", 0.07, baseFrequency * 0.95, baseFrequency, volume);
       this.addTone("sine", 0.046, baseFrequency * 1.45, baseFrequency * 1.49, volume * 0.12);
     }
+    /**
+     * Crash. A filtered noise burst plus a low body thud: the noise carries the
+     * scrape, the sine carries the mass. Crashes used to be silent, which cost
+     * most of the perceived impact.
+     */
+    playCrash() {
+      if (!this.ensureStarted()) return;
+      const context2 = this.context;
+      const masterGain = this.masterGain;
+      if (!context2 || !masterGain) return;
+      this.effectDuck = Math.max(this.effectDuck, 0.85);
+      try {
+        const noise = createLoopingNoiseSource(context2);
+        if (noise) {
+          const filter = context2.createBiquadFilter();
+          const gain = context2.createGain();
+          try {
+            filter.type = "bandpass";
+          } catch (error) {
+          }
+          setAudioParam(filter.frequency, 1500);
+          setAudioParam(filter.Q, 0.7);
+          setAudioParam(gain.gain, 0.3);
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(masterGain);
+          safelyStartNode(noise);
+          this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.3 });
+        }
+      } catch (error) {
+      }
+      this.addTone("triangle", 0.3, 116, 44, 0.34);
+      this.addTone("sawtooth", 0.16, 220, 70, 0.12);
+    }
+    /** Close call: a short upward whoosh, distinct from the overtake blip. */
+    playCloseCall() {
+      this.effectDuck = Math.max(this.effectDuck, 0.3);
+      this.addTone("sine", 0.2, 520, 1500, 0.052);
+      this.addTone("triangle", 0.13, 260, 700, 0.028);
+    }
     playSpeedTierUp(tier) {
       const start = Math.min(250, 118 + tier * 9);
       const end = Math.min(390, start * 1.42);
@@ -1266,6 +1310,16 @@ var HarborLoop = (() => {
       setAudioParam((_g = this.engineFilter) == null ? void 0 : _g.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
       setAudioParam((_h = this.engineNoiseFilter) == null ? void 0 : _h.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
       setAudioParam((_i = this.engineNoiseGain) == null ? void 0 : _i.gain, (3e-3 + revAmount * 0.01 + speedRatio * 9e-3) * duck);
+      for (let index = this.transients.length - 1; index >= 0; index--) {
+        const transient = this.transients[index];
+        transient.elapsed += dt;
+        const t = clamp(transient.elapsed / transient.duration, 0, 1);
+        setAudioParam(transient.gain.gain, Math.max(1e-4, transient.volume * Math.pow(1 - t, 2.2)));
+        if (t >= 1) {
+          for (const node of transient.nodes) safelyStopNode(node);
+          this.transients.splice(index, 1);
+        }
+      }
       for (let index = this.voices.length - 1; index >= 0; index--) {
         const voice = this.voices[index];
         voice.elapsed += dt;
@@ -1899,6 +1953,142 @@ var HarborLoop = (() => {
     return Math.round(starTarget(mode, earned, difficulty));
   }
 
+  // src/render/particles.ts
+  var POOL_SIZE = 160;
+  var pool = Array.from({ length: POOL_SIZE }, () => ({
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    life: 0,
+    maxLife: 1,
+    size: 1,
+    drag: 3,
+    color: "#fff",
+    streak: false
+  }));
+  var nextIndex = 0;
+  function take() {
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const candidate = pool[(nextIndex + i) % POOL_SIZE];
+      if (candidate.life <= 0) {
+        nextIndex = (nextIndex + i + 1) % POOL_SIZE;
+        return candidate;
+      }
+    }
+    const particle = pool[nextIndex];
+    nextIndex = (nextIndex + 1) % POOL_SIZE;
+    return particle;
+  }
+  function burst(x, y, options) {
+    var _a, _b, _c;
+    const spread = (_a = options.spread) != null ? _a : Math.PI * 2;
+    const base = (_b = options.angle) != null ? _b : 0;
+    for (let i = 0; i < options.count; i++) {
+      const particle = take();
+      const angle = base + (Math.random() - 0.5) * spread;
+      const speed = options.speed * (0.55 + Math.random() * 0.75);
+      particle.x = x;
+      particle.y = y;
+      particle.vx = Math.cos(angle) * speed;
+      particle.vy = Math.sin(angle) * speed;
+      particle.maxLife = options.life * (0.7 + Math.random() * 0.6);
+      particle.life = particle.maxLife;
+      particle.size = options.size * (0.7 + Math.random() * 0.7);
+      particle.drag = (_c = options.drag) != null ? _c : 3.2;
+      particle.color = options.colors[Math.floor(Math.random() * options.colors.length)];
+      particle.streak = Boolean(options.streak);
+    }
+  }
+  function updateParticles(dt) {
+    for (const particle of pool) {
+      if (particle.life <= 0) continue;
+      particle.life -= dt;
+      const decay = Math.max(0, 1 - particle.drag * dt);
+      particle.vx *= decay;
+      particle.vy *= decay;
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+    }
+  }
+  function drawParticles() {
+    ctx.save();
+    for (const particle of pool) {
+      if (particle.life <= 0) continue;
+      const t = particle.life / particle.maxLife;
+      ctx.globalAlpha = Math.min(1, t * 1.4);
+      ctx.fillStyle = particle.color;
+      if (particle.streak) {
+        const length = Math.min(14, Math.hypot(particle.vx, particle.vy) * 0.035);
+        ctx.strokeStyle = particle.color;
+        ctx.lineWidth = particle.size * t;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(particle.x, particle.y);
+        ctx.lineTo(particle.x - particle.vx * 0.02, particle.y - particle.vy * 0.02);
+        ctx.stroke();
+        void length;
+      } else {
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size * t, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+  function clearParticles() {
+    for (const particle of pool) particle.life = 0;
+  }
+  function activeParticles() {
+    let count = 0;
+    for (const particle of pool) if (particle.life > 0) count += 1;
+    return count;
+  }
+
+  // src/feel.ts
+  var MAX_SHAKE = 9;
+  var state = {
+    /** Seconds of simulation freeze left. */
+    hitStop: 0,
+    shake: 0,
+    shakeAngle: 0,
+    shakeTime: 0
+  };
+  function addHitStop(seconds) {
+    state.hitStop = Math.max(state.hitStop, seconds);
+  }
+  function addShake(strength, angle = Math.random() * Math.PI * 2) {
+    if (strength <= state.shake) return;
+    state.shake = Math.min(MAX_SHAKE, strength);
+    state.shakeAngle = angle;
+    state.shakeTime = 0;
+  }
+  function consumeHitStop(dt) {
+    if (state.hitStop <= 0) return dt;
+    state.hitStop = Math.max(0, state.hitStop - dt);
+    return 0;
+  }
+  function updateFeel(dt) {
+    state.shakeTime += dt;
+    state.shake = Math.max(0, state.shake - dt * 52);
+  }
+  function shakeOffsetX() {
+    if (state.shake <= 0) return 0;
+    return Math.cos(state.shakeAngle + state.shakeTime * 47) * state.shake;
+  }
+  function shakeOffsetY() {
+    if (state.shake <= 0) return 0;
+    return Math.sin(state.shakeAngle + state.shakeTime * 41) * state.shake * 0.7;
+  }
+  function resetFeel() {
+    state.hitStop = 0;
+    state.shake = 0;
+    state.shakeTime = 0;
+  }
+  function feelState() {
+    return { hitStop: state.hitStop, shake: state.shake };
+  }
+
   // src/run.ts
   var run = {
     modeId: MODES[0].id,
@@ -1908,6 +2098,7 @@ var HarborLoop = (() => {
     score: 0,
     destroyed: 0,
     crashes: 0,
+    closeCalls: 0,
     outcome: "running",
     progress: -1,
     banner: "",
@@ -1921,6 +2112,8 @@ var HarborLoop = (() => {
     applyTuning(difficulty, activeMode.trafficScale);
     resetGame();
     resetEffects();
+    resetFeel();
+    clearParticles();
     run.modeId = modeId;
     run.difficulty = difficulty;
     run.elapsed = 0;
@@ -1928,6 +2121,7 @@ var HarborLoop = (() => {
     run.score = 0;
     run.destroyed = 0;
     run.crashes = 0;
+    run.closeCalls = 0;
     run.outcome = "running";
     run.progress = -1;
     run.banner = "";
@@ -2853,6 +3047,55 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/render/speedLines.ts
+  var TRAIL_SEGMENTS = 7;
+  var TRAIL_STEP = 5.5;
+  function intensity() {
+    const cruise = currentCruiseSpeed();
+    const over = player.speed - cruise * 0.92;
+    if (over <= 0) return 0;
+    return Math.min(1, over / 260);
+  }
+  function drawSpeedLines() {
+    const power = intensity();
+    if (power <= 0.02 || player.state === "CRASHED") return;
+    ctx.save();
+    ctx.lineCap = "round";
+    for (let i = 0; i < TRAIL_SEGMENTS; i++) {
+      const back = (i + 1) * TRAIL_STEP;
+      const point = sampleAtDistance(player.distance - back, player.visualLane);
+      const fade = (1 - i / TRAIL_SEGMENTS) * power;
+      ctx.globalAlpha = fade * 0.5;
+      ctx.strokeStyle = i < 3 ? "#FFD9A8" : "#FFFFFF";
+      ctx.lineWidth = 3.4 * (1 - i / TRAIL_SEGMENTS) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      const tail = sampleAtDistance(player.distance - back - TRAIL_STEP * 0.85, player.visualLane);
+      ctx.lineTo(tail.x, tail.y);
+      ctx.stroke();
+    }
+    if (power > 0.45) {
+      const laneOffsets = [-1.6, -0.9, 0.9, 1.6];
+      ctx.globalAlpha = (power - 0.45) * 0.5;
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = 1.1;
+      for (const offset of laneOffsets) {
+        const lane = player.visualLane + offset;
+        if (lane < -0.4 || lane > LANE_COUNT - 0.6) continue;
+        for (let i = 0; i < 3; i++) {
+          const back = 14 + i * 26 + player.travelled * 1.6 % 26;
+          const head = sampleAtDistance(player.distance - back, lane);
+          const tail = sampleAtDistance(player.distance - back - 11, lane);
+          ctx.beginPath();
+          ctx.moveTo(head.x, head.y);
+          ctx.lineTo(tail.x, tail.y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   // src/render/road.ts
   function drawCurbs(path, phase = 0) {
     ctx.save();
@@ -3157,21 +3400,66 @@ var HarborLoop = (() => {
 
   // src/scoring.ts
   var WRECK_SECONDS = 0.9;
+  var CLOSE_CALL_LANE_DISTANCE = 1.25;
+  var CLOSE_CALL_PATH_DISTANCE = 34;
+  var CLOSE_CALL_BOOST = 0.55;
   function destroyCar(car) {
     var _a, _b;
     car.alive = false;
     car.wreck = WRECK_SECONDS;
     car.hasZone = false;
     run.destroyed += 1;
+    const point = sampleAtDistance(car.distance, car.visualLane);
+    burst(point.x, point.y, {
+      count: 14,
+      speed: 95,
+      life: 0.42,
+      size: 2.6,
+      colors: ["#FFD48A", "#FF8A3C", "#FFF2CE"],
+      streak: true
+    });
+    addShake(4.5);
+    addHitStop(0.045);
     audio.playSpeedTierUp(Math.min(7, 2 + run.destroyed));
     vibrate("medium");
     (_b = (_a = activeMode).onDestroy) == null ? void 0 : _b.call(_a, car, run);
   }
   function crash() {
     var _a, _b;
+    const point = sampleAtDistance(player.distance, player.visualLane);
+    burst(point.x, point.y, {
+      count: 22,
+      speed: 130,
+      life: 0.55,
+      size: 3.1,
+      colors: ["#FF6B5E", "#FFB43C", "#FFF2CE", "#9AA7AE"],
+      streak: true
+    });
+    addHitStop(0.075);
+    addShake(9);
+    audio.playCrash();
     beginCollision();
     run.crashes += 1;
     (_b = (_a = activeMode).onCrash) == null ? void 0 : _b.call(_a, run);
+  }
+  function registerCloseCall() {
+    var _a, _b;
+    run.closeCalls += 1;
+    player.tierBoostElapsed = Math.max(player.tierBoostElapsed, CLOSE_CALL_BOOST);
+    const point = sampleAtDistance(player.distance, player.visualLane);
+    burst(point.x, point.y, {
+      count: 7,
+      speed: 70,
+      life: 0.3,
+      size: 1.8,
+      colors: ["#C5FFF7", "#57D5CB"],
+      streak: true
+    });
+    addShake(1.8);
+    audio.playCloseCall();
+    run.banner = "CLOSE!";
+    run.bannerTimer = 0.55;
+    (_b = (_a = activeMode).onCloseCall) == null ? void 0 : _b.call(_a, run);
   }
   function detectCollisions() {
     var _a, _b, _c;
@@ -3220,8 +3508,25 @@ var HarborLoop = (() => {
           player.tierBoostElapsed = PLAYER_TIER_BOOST_DURATION;
           audio.playSpeedTierUp(newTier);
         }
+        if (newTier > previousTier) {
+          const point = sampleAtDistance(player.distance, player.visualLane);
+          burst(point.x, point.y, {
+            count: 18,
+            speed: 120,
+            life: 0.5,
+            size: 2.4,
+            colors: ["#C5FFF7", "#57D5CB", "#FFF4D8"],
+            streak: true
+          });
+          addShake(3.2);
+        }
         vibrate(newTier > previousTier ? "medium" : "light");
         (_b = (_a = activeMode).onOvertake) == null ? void 0 : _b.call(_a, overtakes, run);
+        const laneGap = Math.abs(player.visualLane - car.visualLane);
+        const pathGap = circularDistance(player.distance, car.distance);
+        if (laneGap <= CLOSE_CALL_LANE_DISTANCE && pathGap <= CLOSE_CALL_PATH_DISTANCE) {
+          registerCloseCall();
+        }
       } else if (currentPassIndex < car.passIndex) {
         car.passIndex = currentPassIndex;
       }
@@ -3232,20 +3537,30 @@ var HarborLoop = (() => {
   var lastTime = Date.now();
   function stepRace(dt) {
     updateControlFlash(dt);
-    updateAi(dt);
-    updatePlayer(dt);
-    audio.update(dt, engineSnapshot());
+    updateFeel(dt);
+    updateParticles(dt);
+    const simDt = consumeHitStop(dt);
+    if (simDt <= 0) return;
+    updateAi(simDt);
+    updatePlayer(simDt);
+    audio.update(simDt, engineSnapshot());
     const collided = detectCollisions();
     if (!collided) detectOvertakes();
-    updateRun(dt);
+    updateRun(simDt);
   }
   function drawRace() {
     drawStaticScene();
     ctx.save();
-    ctx.translate(offsetX, offsetY);
+    ctx.translate(offsetX + shakeOffsetX(), offsetY + shakeOffsetY());
     ctx.scale(scale, scale);
     drawHazardLane();
+    drawSpeedLines();
     drawCars();
+    drawParticles();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
     drawBlackout();
     drawHud();
     drawControls();

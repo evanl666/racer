@@ -4,6 +4,8 @@ import { applyTuning } from './difficulty';
 import { resetEffects } from './effects';
 import { MODES, modeById } from './modes';
 import type { Difficulty, ModeDefinition, ModeId, RunState } from './modes/types';
+import { clearParticles } from './render/particles';
+import { resetFeel } from './feel';
 import { aiCars, player, resetGame } from './state';
 import { setTrack } from './track';
 
@@ -15,6 +17,7 @@ export const run: RunState = {
   score: 0,
   destroyed: 0,
   crashes: 0,
+  closeCalls: 0,
   outcome: 'running',
   progress: -1,
   banner: '',
@@ -32,6 +35,8 @@ export function startRun(modeId: ModeId, difficulty: Difficulty): void {
   applyTuning(difficulty, activeMode.trafficScale);
   resetGame();
   resetEffects();
+  resetFeel();
+  clearParticles();
 
   run.modeId = modeId;
   run.difficulty = difficulty;
@@ -40,6 +45,7 @@ export function startRun(modeId: ModeId, difficulty: Difficulty): void {
   run.score = 0;
   run.destroyed = 0;
   run.crashes = 0;
+  run.closeCalls = 0;
   run.outcome = 'running';
   run.progress = -1;
   run.banner = '';

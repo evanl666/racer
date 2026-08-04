@@ -39,6 +39,8 @@ export interface RunState {
   score: number;
   destroyed: number;
   crashes: number;
+  /** Passes made close enough to an AI car to count as a near miss. */
+  closeCalls: number;
   outcome: RunOutcome;
   /** Objective progress in 0..1, drawn as a bar. Negative means "no bar". */
   progress: number;
@@ -78,6 +80,8 @@ export interface ModeDefinition {
   onCrash?(run: RunState): void;
   /** Called after a contact resolved as 'destroy'. */
   onDestroy?(car: AiCar, run: RunState): void;
+  /** Called for each near miss, so a mode can reward them. */
+  onCloseCall?(run: RunState): void;
   /** Objective met — the run ends as 'cleared'. */
   cleared?(run: RunState, cars: AiCar[]): boolean;
   /** Run ends as 'wrecked' before the clock runs out. */

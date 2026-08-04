@@ -15,6 +15,7 @@ export const comboRacers: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'COMBO',
   trafficScale: 1,
+  stars: [12, 26, 40],
 
   update(_dt, run) {
     if (player.combo > run.score) run.score = player.combo;

@@ -4,6 +4,7 @@ import { submitFriendScore } from './leaderboard';
 import { MODES } from './modes';
 import type { Difficulty, ModeId, RunOutcome } from './modes/types';
 import { modeById } from './modes';
+import { modeUnlocked } from './progress';
 import { run, startRun } from './run';
 import { bestScore, careerPoints, submitScore } from './storage';
 
@@ -31,9 +32,13 @@ export function openMenu(): void {
   app.screen = 'MENU';
 }
 
-export function startMode(modeId: ModeId): void {
+export function startMode(modeId: ModeId): boolean {
+  // The menu already checks this; the guard keeps a deep link or a console call
+  // from skipping the ladder.
+  if (!modeUnlocked(modeId)) return false;
   startRun(modeId, app.difficulty);
   app.screen = 'PLAYING';
+  return true;
 }
 
 export function retryRun(): void {

@@ -29,7 +29,7 @@ import { drawTrack } from './render/road';
 import { drawBackground } from './render/scenery';
 import { drawCars } from './render/vehicles';
 import { runIsOver, updateRun } from './run';
-import { drawMenu } from './screens/menu';
+import { drawMenu, updateMenu } from './screens/menu';
 import { drawResult, enterResultScreen } from './screens/result';
 import { detectCollisions, detectOvertakes } from './scoring';
 import { installShareMenu } from './share';
@@ -74,6 +74,7 @@ function frame(nowValue?: number): void {
     stepRace(dt);
     drawRace();
   } else if (app.screen === 'MENU') {
+    updateMenu(dt);
     drawMenu();
   } else {
     drawResult();
@@ -115,3 +116,4 @@ export { MODES } from './modes';
 export { laneButtonFlash } from './controls';
 export { debugPointerCount } from './input';
 export { bestScore, careerPoints } from './storage';
+export { totalStars, starsFor, modeUnlocked, modeUnlockCost, difficultyUnlocked, setUnlockOverride } from './progress';

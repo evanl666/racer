@@ -32,6 +32,7 @@ export const paceSetter: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'POINTS',
   trafficScale: 0.85,
+  stars: [1200, 2600, 4100],
 
   setup() {
     inBandSeconds = 0;

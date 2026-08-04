@@ -12,6 +12,7 @@ export const speedMonkey: ModeDefinition = {
   timeLimit: Infinity,
   scoreUnit: 'COMBO',
   trafficScale: 1,
+  stars: [10, 26, 48],
 
   update(_dt, run) {
     run.progress = -1;

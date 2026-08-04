@@ -17,6 +17,7 @@ export const hotRods: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'METRES',
   trafficScale: 1,
+  stars: [4000, 8200, 12500],
 
   setup() {
     player.heat = 0;

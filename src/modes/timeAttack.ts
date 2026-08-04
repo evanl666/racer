@@ -19,6 +19,7 @@ export const timeAttack: ModeDefinition = {
   timeLimit: 180,
   scoreUnit: 'SECONDS',
   trafficScale: 0.9,
+  stars: [95, 80, 68],
   lowerIsBetter: true,
 
   setup() {

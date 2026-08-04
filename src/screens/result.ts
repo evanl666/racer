@@ -4,6 +4,8 @@ import { app, openMenu, retryRun } from '../app';
 import { DIFFICULTY_PROFILES } from '../difficulty';
 import { leaderboardAvailable, requestFriendRanking, sharedCanvas } from '../leaderboard';
 import { modeById } from '../modes';
+import { nextStarTarget, starsFor } from '../progress';
+import { drawStar } from '../render/icons';
 import { ctx, DESIGN_H, DESIGN_W, DPR } from '../platform';
 import {
   chip,
@@ -76,18 +78,24 @@ export function drawResult(): void {
   ctx.font = '900 11px sans-serif';
   ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
 
+  // Stars are the progression currency, so they get the most weight after the score.
+  const earned = starsFor(summary.modeId, summary.difficulty);
+  for (let i = 0; i < 3; i++) {
+    drawStar(DESIGN_W / 2 - 34 + i * 34, SCORE_CARD.y + 162, 14, i < earned ? UI.primary : 'rgba(34,50,63,0.16)', i < earned);
+  }
+
+  const target = nextStarTarget(summary.modeId, summary.difficulty);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = UI.inkSoft;
+  ctx.font = '700 10px sans-serif';
   if (summary.newBest) {
-    chip(
-      { x: DESIGN_W / 2 - 60, y: SCORE_CARD.y + 156, w: 120, h: 30 },
-      'NEW BEST!',
-      UI.primary,
-      UI.ink,
-      13
-    );
+    ctx.fillStyle = UI.primaryDeep;
+    ctx.font = '900 11px sans-serif';
+    ctx.fillText('NEW BEST!', DESIGN_W / 2, SCORE_CARD.y + 192);
+  } else if (target !== null) {
+    ctx.fillText(`下一颗星：${target} ${summary.scoreUnit}`, DESIGN_W / 2, SCORE_CARD.y + 192);
   } else if (summary.best !== null) {
-    ctx.fillStyle = UI.inkSoft;
-    ctx.font = '900 13px monospace';
-    ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 176);
+    ctx.fillText(`BEST ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 192);
   }
 
   drawRankingPanel();

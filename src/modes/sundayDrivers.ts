@@ -13,6 +13,7 @@ export const sundayDrivers: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'PASSES',
   trafficScale: 0.42,
+  stars: [30, 55, 82],
 
   update(_dt, run) {
     run.score = player.totalPasses;

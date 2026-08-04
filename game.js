@@ -45,13 +45,19 @@ var HarborLoop = (() => {
     bestScore: () => bestScore,
     careerPoints: () => careerPoints,
     debugPointerCount: () => debugPointerCount,
+    difficultyUnlocked: () => difficultyUnlocked,
     inputState: () => inputState,
     laneButtonFlash: () => laneButtonFlash,
+    modeUnlockCost: () => modeUnlockCost,
+    modeUnlocked: () => modeUnlocked,
     openMenu: () => openMenu,
     player: () => player,
     retryRun: () => retryRun,
     run: () => run,
-    startMode: () => startMode
+    setUnlockOverride: () => setUnlockOverride,
+    starsFor: () => starsFor,
+    startMode: () => startMode,
+    totalStars: () => totalStars
   });
 
   // src/config.ts
@@ -603,6 +609,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 0.9,
+    stars: [15, 28, 43],
     setup() {
       effects.dim = 0;
     },
@@ -632,6 +639,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "CHAIN",
     trafficScale: 0.9,
+    stars: [3, 6, 10],
     setup() {
       chain = 0;
       best = 0;
@@ -675,6 +683,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "COMBO",
     trafficScale: 1,
+    stars: [12, 26, 40],
     update(_dt, run2) {
       if (player.combo > run2.score) run2.score = player.combo;
       run2.progress = Math.min(1, player.combo / TARGET_COMBO);
@@ -696,6 +705,7 @@ var HarborLoop = (() => {
     timeLimit: 90,
     scoreUnit: "POINTS",
     trafficScale: 0.85,
+    stars: [800, 2e3, 3600],
     setup() {
       player.fireball = Number.POSITIVE_INFINITY;
     },
@@ -723,6 +733,7 @@ var HarborLoop = (() => {
     timeLimit: Infinity,
     scoreUnit: "PASSES",
     trafficScale: 0.75,
+    stars: [15, 35, 62],
     setup(_run, cars) {
       baseline = cars.map((car) => car.baseSpeed);
     },
@@ -751,6 +762,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 1,
+    stars: [400, 1200, 2600],
     setup() {
       lastCharge = 0;
     },
@@ -1224,6 +1236,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 1,
+    stars: [10, 20, 33],
     setup() {
       timer = SWITCH_SECONDS;
       nextLane = Math.floor(Math.random() * LANE_COUNT);
@@ -1261,6 +1274,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "METRES",
     trafficScale: 1,
+    stars: [4e3, 8200, 12500],
     setup() {
       player.heat = 0;
     },
@@ -1296,6 +1310,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "POINTS",
     trafficScale: 0.9,
+    stars: [1e3, 2100, 3300],
     setup(_run, cars) {
       const stride = Math.max(1, Math.floor(cars.length / ZONE_COUNT));
       cars.forEach((car) => {
@@ -1349,6 +1364,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "PASSES",
     trafficScale: 0.95,
+    stars: [12, 24, 38],
     setup() {
       timer2 = CULL_INTERVAL;
     },
@@ -1388,6 +1404,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 0.85,
+    stars: [1200, 2600, 4100],
     setup() {
       inBandSeconds = 0;
     },
@@ -1411,6 +1428,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "PASSES",
     trafficScale: 0.8,
+    stars: [18, 33, 50],
     setup(_run, cars) {
       baseline2 = cars.map((car) => car.baseSpeed);
     },
@@ -1437,6 +1455,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 0.95,
+    stars: [1400, 3e3, 5e3],
     setup() {
       charge = 0;
     },
@@ -1477,6 +1496,7 @@ var HarborLoop = (() => {
     timeLimit: Infinity,
     scoreUnit: "COMBO",
     trafficScale: 1,
+    stars: [10, 26, 48],
     update(_dt, run2) {
       run2.progress = -1;
       if (player.combo > run2.score) run2.score = player.combo;
@@ -1494,6 +1514,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 0.42,
+    stars: [30, 55, 82],
     update(_dt, run2) {
       run2.score = player.totalPasses;
       run2.progress = -1;
@@ -1514,6 +1535,7 @@ var HarborLoop = (() => {
     timeLimit: 180,
     scoreUnit: "SECONDS",
     trafficScale: 0.9,
+    stars: [95, 80, 68],
     lowerIsBetter: true,
     setup() {
       startDistance = player.distance;
@@ -1561,59 +1583,6 @@ var HarborLoop = (() => {
     const mode = BY_ID.get(id);
     if (!mode) throw new Error(`unknown mode: ${id}`);
     return mode;
-  }
-
-  // src/run.ts
-  var run = {
-    modeId: MODES[0].id,
-    difficulty: "normal",
-    elapsed: 0,
-    timeRemaining: Infinity,
-    score: 0,
-    destroyed: 0,
-    crashes: 0,
-    outcome: "running",
-    progress: -1,
-    banner: "",
-    bannerTimer: 0
-  };
-  var activeMode = MODES[0];
-  function startRun(modeId, difficulty) {
-    var _a;
-    activeMode = modeById(modeId);
-    applyTuning(difficulty, activeMode.trafficScale);
-    resetGame();
-    resetEffects();
-    run.modeId = modeId;
-    run.difficulty = difficulty;
-    run.elapsed = 0;
-    run.timeRemaining = activeMode.timeLimit;
-    run.score = 0;
-    run.destroyed = 0;
-    run.crashes = 0;
-    run.outcome = "running";
-    run.progress = -1;
-    run.banner = "";
-    run.bannerTimer = 0;
-    (_a = activeMode.setup) == null ? void 0 : _a.call(activeMode, run, aiCars);
-  }
-  function updateRun(dt) {
-    var _a, _b, _c;
-    if (run.outcome !== "running") return;
-    run.elapsed += dt;
-    if (Number.isFinite(run.timeRemaining)) {
-      run.timeRemaining = Math.max(0, run.timeRemaining - dt);
-    }
-    run.bannerTimer = Math.max(0, run.bannerTimer - dt);
-    if (run.bannerTimer <= 0) run.banner = "";
-    (_a = activeMode.update) == null ? void 0 : _a.call(activeMode, dt, run, aiCars);
-    if (run.outcome !== "running") return;
-    if ((_b = activeMode.cleared) == null ? void 0 : _b.call(activeMode, run, aiCars)) run.outcome = "cleared";
-    else if ((_c = activeMode.failed) == null ? void 0 : _c.call(activeMode, run, aiCars)) run.outcome = "wrecked";
-    else if (run.timeRemaining <= 0) run.outcome = "timeout";
-  }
-  function runIsOver() {
-    return run.outcome !== "running";
   }
 
   // src/storage.ts
@@ -1686,6 +1655,140 @@ var HarborLoop = (() => {
     }, 0);
   }
 
+  // src/progress.ts
+  var MAX_STARS_PER_ENTRY = 3;
+  var unlockOverride = false;
+  function setUnlockOverride(value) {
+    unlockOverride = value;
+  }
+  var STARTING_MODE_COUNT = 3;
+  var MODE_UNLOCK_COST = [3, 6, 10, 14, 19, 24, 30, 36, 43, 50, 58, 66, 75];
+  var DIFFICULTY_UNLOCK_COST = {
+    normal: 0,
+    turbo: 6,
+    master: 20
+  };
+  var DIFFICULTY_STAR_SCALE = {
+    normal: 1,
+    turbo: 1.15,
+    master: 1.3
+  };
+  function starTarget(mode, tier, difficulty) {
+    const base = mode.stars[tier];
+    const scale2 = DIFFICULTY_STAR_SCALE[difficulty];
+    return mode.lowerIsBetter ? base / scale2 : base * scale2;
+  }
+  function starsFor(modeId, difficulty) {
+    const best2 = bestScore(modeId, difficulty);
+    if (best2 === null) return 0;
+    const mode = modeById(modeId);
+    let earned = 0;
+    for (let tier = 0; tier < MAX_STARS_PER_ENTRY; tier++) {
+      const target = starTarget(mode, tier, difficulty);
+      const reached = mode.lowerIsBetter ? best2 <= target : best2 >= target;
+      if (reached) earned = tier + 1;
+    }
+    return earned;
+  }
+  function totalStars() {
+    let total = 0;
+    for (const mode of MODES) {
+      for (const difficulty of DIFFICULTIES) {
+        total += starsFor(mode.id, difficulty);
+      }
+    }
+    return total;
+  }
+  function maxStars() {
+    return MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
+  }
+  function modeUnlockCost(modeId) {
+    var _a;
+    const index = MODES.findIndex((mode) => mode.id === modeId);
+    if (index < STARTING_MODE_COUNT) return 0;
+    return (_a = MODE_UNLOCK_COST[index - STARTING_MODE_COUNT]) != null ? _a : 0;
+  }
+  function modeUnlocked(modeId, stars = totalStars()) {
+    return unlockOverride || stars >= modeUnlockCost(modeId);
+  }
+  function difficultyUnlockCost(difficulty) {
+    return DIFFICULTY_UNLOCK_COST[difficulty];
+  }
+  function difficultyUnlocked(difficulty, stars = totalStars()) {
+    return unlockOverride || stars >= DIFFICULTY_UNLOCK_COST[difficulty];
+  }
+  function nextUnlock() {
+    const stars = totalStars();
+    for (const difficulty of DIFFICULTIES) {
+      const cost = DIFFICULTY_UNLOCK_COST[difficulty];
+      if (stars < cost) return { label: DIFFICULTY_PROFILES[difficulty].label, cost };
+    }
+    for (const mode of MODES) {
+      const cost = modeUnlockCost(mode.id);
+      if (stars < cost) return { label: mode.name, cost };
+    }
+    return null;
+  }
+  function nextStarTarget(modeId, difficulty) {
+    const mode = modeById(modeId);
+    const earned = starsFor(modeId, difficulty);
+    if (earned >= MAX_STARS_PER_ENTRY) return null;
+    return Math.round(starTarget(mode, earned, difficulty));
+  }
+
+  // src/run.ts
+  var run = {
+    modeId: MODES[0].id,
+    difficulty: "normal",
+    elapsed: 0,
+    timeRemaining: Infinity,
+    score: 0,
+    destroyed: 0,
+    crashes: 0,
+    outcome: "running",
+    progress: -1,
+    banner: "",
+    bannerTimer: 0
+  };
+  var activeMode = MODES[0];
+  function startRun(modeId, difficulty) {
+    var _a;
+    activeMode = modeById(modeId);
+    applyTuning(difficulty, activeMode.trafficScale);
+    resetGame();
+    resetEffects();
+    run.modeId = modeId;
+    run.difficulty = difficulty;
+    run.elapsed = 0;
+    run.timeRemaining = activeMode.timeLimit;
+    run.score = 0;
+    run.destroyed = 0;
+    run.crashes = 0;
+    run.outcome = "running";
+    run.progress = -1;
+    run.banner = "";
+    run.bannerTimer = 0;
+    (_a = activeMode.setup) == null ? void 0 : _a.call(activeMode, run, aiCars);
+  }
+  function updateRun(dt) {
+    var _a, _b, _c;
+    if (run.outcome !== "running") return;
+    run.elapsed += dt;
+    if (Number.isFinite(run.timeRemaining)) {
+      run.timeRemaining = Math.max(0, run.timeRemaining - dt);
+    }
+    run.bannerTimer = Math.max(0, run.bannerTimer - dt);
+    if (run.bannerTimer <= 0) run.banner = "";
+    (_a = activeMode.update) == null ? void 0 : _a.call(activeMode, dt, run, aiCars);
+    if (run.outcome !== "running") return;
+    if ((_b = activeMode.cleared) == null ? void 0 : _b.call(activeMode, run, aiCars)) run.outcome = "cleared";
+    else if ((_c = activeMode.failed) == null ? void 0 : _c.call(activeMode, run, aiCars)) run.outcome = "wrecked";
+    else if (run.timeRemaining <= 0) run.outcome = "timeout";
+  }
+  function runIsOver() {
+    return run.outcome !== "running";
+  }
+
   // src/app.ts
   var app = {
     screen: "MENU",
@@ -1698,8 +1801,10 @@ var HarborLoop = (() => {
     app.screen = "MENU";
   }
   function startMode(modeId) {
+    if (!modeUnlocked(modeId)) return false;
     startRun(modeId, app.difficulty);
     app.screen = "PLAYING";
+    return true;
   }
   function retryRun() {
     const summary = app.result;
@@ -1973,6 +2078,45 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/render/icons.ts
+  function drawStar(cx, cy, radius, color, filled) {
+    const inner = radius * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? radius : inner;
+      const angle = -Math.PI / 2 + i * Math.PI / 5;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    if (filled) {
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+  }
+  function drawLock(cx, cy, size, color) {
+    const bodyW = size;
+    const bodyH = size * 0.78;
+    const bodyY = cy - bodyH / 2 + size * 0.16;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.4, size * 0.16);
+    ctx.beginPath();
+    ctx.arc(cx, bodyY, bodyW * 0.32, Math.PI, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.rect(cx - bodyW / 2, bodyY, bodyW, bodyH);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // src/render/ui.ts
   function hits(rect, x, y) {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
@@ -2045,11 +2189,16 @@ var HarborLoop = (() => {
 
   // src/screens/menu.ts
   var MARGIN = 14;
-  var PILL_Y = 74;
-  var PILL_H = 36;
+  var PILL_Y = 78;
+  var PILL_H = 34;
   var LIST_TOP = 148;
   var ROW_H = 38;
   var ROW_GAP = 3;
+  var toast = { text: "", timer: 0 };
+  function updateMenu(dt) {
+    toast.timer = Math.max(0, toast.timer - dt);
+    if (toast.timer <= 0) toast.text = "";
+  }
   function pillRect(index) {
     const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
     return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
@@ -2064,92 +2213,151 @@ var HarborLoop = (() => {
   }
   function drawMenu() {
     screenBackground(DESIGN_W, DESIGN_H);
-    headline("HARBOR LOOP", MARGIN, 44, 30, UI.card);
-    const points = `${careerPoints()}`;
+    const stars = totalStars();
+    headline("HARBOR LOOP", MARGIN, 42, 28, UI.card);
+    const starText = `${stars}/${maxStars()}`;
     ctx.font = "900 12px sans-serif";
-    const pointsWidth = Math.max(64, ctx.measureText(points).width + 40);
-    chip(
-      { x: DESIGN_W - MARGIN - pointsWidth, y: 24, w: pointsWidth, h: 26 },
-      `${points} PTS`,
-      UI.chip,
-      UI.primary
+    const starWidth = Math.max(78, ctx.measureText(starText).width + 42);
+    const starChip = { x: DESIGN_W - MARGIN - starWidth, y: 22, w: starWidth, h: 26 };
+    chip(starChip, "", UI.chip, UI.primary);
+    drawStar(starChip.x + 17, starChip.y + 13, 7, UI.primary, true);
+    ctx.textAlign = "left";
+    ctx.fillStyle = UI.primary;
+    ctx.font = "900 12px sans-serif";
+    ctx.fillText(starText, starChip.x + 28, starChip.y + 17);
+    const next = nextUnlock();
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,246,228,0.55)";
+    ctx.font = "600 10px sans-serif";
+    ctx.fillText(
+      next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : "全部模式和难度已解锁",
+      MARGIN,
+      60
     );
     DIFFICULTIES.forEach((difficulty, index) => {
       const rect = pillRect(index);
-      const selected = app.difficulty === difficulty;
+      const unlocked = difficultyUnlocked(difficulty, stars);
+      const selected = app.difficulty === difficulty && unlocked;
       panel(rect, {
         fill: selected ? UI.primary : UI.chip,
         radius: rect.h / 2,
         lift: selected ? 4 : 2
       });
       ctx.textAlign = "center";
-      ctx.fillStyle = selected ? UI.ink : UI.card;
-      ctx.font = "900 13px sans-serif";
-      ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
+      if (!unlocked) {
+        drawLock(rect.x + rect.w / 2 - 16, rect.y + rect.h / 2, 9, "rgba(255,246,228,0.5)");
+        ctx.fillStyle = "rgba(255,246,228,0.5)";
+        ctx.font = "900 11px sans-serif";
+        ctx.fillText(`${difficultyUnlockCost(difficulty)}`, rect.x + rect.w / 2 + 10, rect.y + rect.h / 2 + 4);
+        drawStar(rect.x + rect.w / 2 - 1, rect.y + rect.h / 2 - 1, 5, "rgba(255,246,228,0.5)", true);
+      } else {
+        ctx.fillStyle = selected ? UI.ink : UI.card;
+        ctx.font = "900 13px sans-serif";
+        ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
+      }
     });
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(255,246,228,0.72)";
     ctx.font = "600 11px sans-serif";
     ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
     MODES.forEach((mode, index) => {
-      const rect = rowRect(index);
-      const fromOriginal = ORIGINAL_MODE_IDS.has(mode.id);
-      panel(rect, { fill: fromOriginal ? UI.card : UI.cardAlt, radius: 11, lift: 3 });
-      ctx.save();
-      roundRect2(rect);
-      ctx.clip();
-      ctx.fillStyle = fromOriginal ? UI.primary : UI.good;
-      ctx.fillRect(rect.x, rect.y, 5, rect.h);
-      ctx.restore();
-      ctx.textAlign = "left";
-      ctx.fillStyle = UI.ink;
-      ctx.font = "900 13px sans-serif";
-      ctx.fillText(mode.name, rect.x + 14, rect.y + 17);
-      const nameWidth = ctx.measureText(mode.name).width;
-      ctx.fillStyle = fromOriginal ? UI.primaryDeep : UI.good;
-      ctx.font = "900 8px sans-serif";
-      ctx.fillText(fromOriginal ? "PJ" : "NEW", rect.x + 19 + nameWidth, rect.y + 13);
-      ctx.fillStyle = UI.inkSoft;
-      ctx.font = "500 9.5px sans-serif";
-      ctx.fillText(mode.rule, rect.x + 14, rect.y + 30);
-      const best2 = bestScore(mode.id, app.difficulty);
-      ctx.textAlign = "right";
-      if (best2 === null) {
-        ctx.fillStyle = "rgba(34,50,63,0.28)";
-        ctx.font = "900 12px monospace";
-        ctx.fillText("--", rect.x + rect.w - 12, rect.y + 24);
-      } else {
-        ctx.fillStyle = UI.ink;
-        ctx.font = "900 16px monospace";
-        ctx.fillText(String(best2), rect.x + rect.w - 12, rect.y + 25);
-      }
+      drawModeRow(mode.id, index, stars);
     });
+    if (toast.text) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, toast.timer * 2.5);
+      const width = 250;
+      panel({ x: (DESIGN_W - width) / 2, y: DESIGN_H / 2 - 26, w: width, h: 52 }, {
+        fill: UI.chip,
+        radius: 14,
+        lift: 4
+      });
+      ctx.textAlign = "center";
+      ctx.fillStyle = UI.card;
+      ctx.font = "900 13px sans-serif";
+      ctx.fillText(toast.text, DESIGN_W / 2, DESIGN_H / 2 + 5);
+      ctx.restore();
+    }
     ctx.textAlign = "center";
   }
-  function roundRect2(rect) {
-    const r = 11;
-    ctx.beginPath();
-    ctx.moveTo(rect.x + r, rect.y);
-    ctx.arcTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h, r);
-    ctx.arcTo(rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h, r);
-    ctx.arcTo(rect.x, rect.y + rect.h, rect.x, rect.y, r);
-    ctx.arcTo(rect.x, rect.y, rect.x + rect.w, rect.y, r);
-    ctx.closePath();
+  function drawModeRow(modeId, index, stars) {
+    const mode = MODES[index];
+    const rect = rowRect(index);
+    const unlocked = modeUnlocked(modeId, stars);
+    const fromOriginal = ORIGINAL_MODE_IDS.has(modeId);
+    panel(rect, {
+      fill: unlocked ? fromOriginal ? UI.card : UI.cardAlt : "rgba(255,246,228,0.13)",
+      radius: 11,
+      lift: unlocked ? 3 : 1,
+      outlineWidth: unlocked ? 2.5 : 1.4
+    });
+    if (!unlocked) {
+      drawLock(rect.x + 22, rect.y + rect.h / 2, 11, "rgba(255,246,228,0.55)");
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255,246,228,0.5)";
+      ctx.font = "900 12px sans-serif";
+      ctx.fillText(mode.name, rect.x + 40, rect.y + 24);
+      ctx.textAlign = "right";
+      ctx.fillStyle = UI.primary;
+      ctx.font = "900 13px sans-serif";
+      ctx.fillText(`${modeUnlockCost(modeId)}`, rect.x + rect.w - 14, rect.y + 25);
+      drawStar(rect.x + rect.w - 30, rect.y + rect.h / 2 - 1, 6, UI.primary, true);
+      return;
+    }
+    ctx.textAlign = "left";
+    ctx.fillStyle = UI.ink;
+    ctx.font = "900 13px sans-serif";
+    ctx.fillText(mode.name, rect.x + 12, rect.y + 16);
+    const nameWidth = ctx.measureText(mode.name).width;
+    ctx.fillStyle = fromOriginal ? UI.primaryDeep : UI.good;
+    ctx.font = "900 8px sans-serif";
+    ctx.fillText(fromOriginal ? "PJ" : "NEW", rect.x + 17 + nameWidth, rect.y + 12);
+    ctx.fillStyle = UI.inkSoft;
+    ctx.font = "500 9.5px sans-serif";
+    ctx.fillText(mode.rule, rect.x + 12, rect.y + 30);
+    const earned = starsFor(modeId, app.difficulty);
+    for (let i = 0; i < 3; i++) {
+      drawStar(rect.x + rect.w - 66 + i * 15, rect.y + 14, 6, i < earned ? UI.primary : "rgba(34,50,63,0.18)", i < earned);
+    }
+    const best2 = bestScore(modeId, app.difficulty);
+    ctx.textAlign = "right";
+    if (best2 === null) {
+      ctx.fillStyle = "rgba(34,50,63,0.3)";
+      ctx.font = "900 10px monospace";
+      ctx.fillText("--", rect.x + rect.w - 14, rect.y + 31);
+    } else {
+      ctx.fillStyle = UI.ink;
+      ctx.font = "900 12px monospace";
+      ctx.fillText(String(best2), rect.x + rect.w - 14, rect.y + 31);
+    }
   }
   function handleMenuTap(x, y) {
+    const stars = totalStars();
     for (let i = 0; i < DIFFICULTIES.length; i++) {
-      if (hits(pillRect(i), x, y)) {
-        app.difficulty = DIFFICULTIES[i];
-        return true;
+      if (!hits(pillRect(i), x, y)) continue;
+      const difficulty = DIFFICULTIES[i];
+      if (!difficultyUnlocked(difficulty, stars)) {
+        showToast(`需要 ${difficultyUnlockCost(difficulty)} 颗星解锁`);
+      } else {
+        app.difficulty = difficulty;
       }
+      return true;
     }
     for (let i = 0; i < MODES.length; i++) {
-      if (hits(rowRect(i), x, y)) {
-        startMode(MODES[i].id);
-        return true;
+      if (!hits(rowRect(i), x, y)) continue;
+      const mode = MODES[i];
+      if (!modeUnlocked(mode.id, stars)) {
+        showToast(`需要 ${modeUnlockCost(mode.id)} 颗星解锁`);
+      } else {
+        startMode(mode.id);
       }
+      return true;
     }
     return false;
+  }
+  function showToast(text) {
+    toast.text = text;
+    toast.timer = 1.6;
   }
 
   // src/share.ts
@@ -2228,18 +2436,22 @@ var HarborLoop = (() => {
     ctx.fillStyle = UI.inkSoft;
     ctx.font = "900 11px sans-serif";
     ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
+    const earned = starsFor(summary.modeId, summary.difficulty);
+    for (let i = 0; i < 3; i++) {
+      drawStar(DESIGN_W / 2 - 34 + i * 34, SCORE_CARD.y + 162, 14, i < earned ? UI.primary : "rgba(34,50,63,0.16)", i < earned);
+    }
+    const target = nextStarTarget(summary.modeId, summary.difficulty);
+    ctx.textAlign = "center";
+    ctx.fillStyle = UI.inkSoft;
+    ctx.font = "700 10px sans-serif";
     if (summary.newBest) {
-      chip(
-        { x: DESIGN_W / 2 - 60, y: SCORE_CARD.y + 156, w: 120, h: 30 },
-        "NEW BEST!",
-        UI.primary,
-        UI.ink,
-        13
-      );
+      ctx.fillStyle = UI.primaryDeep;
+      ctx.font = "900 11px sans-serif";
+      ctx.fillText("NEW BEST!", DESIGN_W / 2, SCORE_CARD.y + 192);
+    } else if (target !== null) {
+      ctx.fillText(`下一颗星：${target} ${summary.scoreUnit}`, DESIGN_W / 2, SCORE_CARD.y + 192);
     } else if (summary.best !== null) {
-      ctx.fillStyle = UI.inkSoft;
-      ctx.font = "900 13px monospace";
-      ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 176);
+      ctx.fillText(`BEST ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 192);
     }
     drawRankingPanel();
     chunkyButton(RETRY, "再来一次", "primary", 18);
@@ -2850,6 +3062,7 @@ var HarborLoop = (() => {
       stepRace(dt);
       drawRace();
     } else if (app.screen === "MENU") {
+      updateMenu(dt);
       drawMenu();
     } else {
       drawResult();

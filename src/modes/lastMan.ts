@@ -19,6 +19,7 @@ export const lastMan: ModeDefinition = {
   timeLimit: 75,
   scoreUnit: 'PASSES',
   trafficScale: 0.95,
+  stars: [12, 24, 38],
 
   setup() {
     timer = CULL_INTERVAL;

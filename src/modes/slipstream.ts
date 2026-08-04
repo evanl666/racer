@@ -22,6 +22,7 @@ export const slipstream: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'POINTS',
   trafficScale: 0.95,
+  stars: [1400, 3000, 5000],
 
   setup() {
     charge = 0;

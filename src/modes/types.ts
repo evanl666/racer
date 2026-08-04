@@ -58,6 +58,12 @@ export interface ModeDefinition {
   scoreUnit: string;
   /** Traffic speed multiplier applied on top of the difficulty scale. */
   trafficScale: number;
+  /**
+   * Score needed for one, two and three stars, in this mode's own unit.
+   * Stars are the game's single progression currency: they gate every mode and
+   * difficulty past the starting three.
+   */
+  stars: [number, number, number];
   /** Higher score is better for every mode except those that set this false. */
   lowerIsBetter?: boolean;
 

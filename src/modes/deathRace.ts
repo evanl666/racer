@@ -13,6 +13,7 @@ export const deathRace: ModeDefinition = {
   timeLimit: 90,
   scoreUnit: 'POINTS',
   trafficScale: 0.85,
+  stars: [800, 2000, 3600],
 
   setup() {
     // Armed for the whole run rather than in bursts.

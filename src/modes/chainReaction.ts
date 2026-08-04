@@ -20,6 +20,7 @@ export const chainReaction: ModeDefinition = {
   timeLimit: 75,
   scoreUnit: 'CHAIN',
   trafficScale: 0.9,
+  stars: [3, 6, 10],
 
   setup() {
     chain = 0;

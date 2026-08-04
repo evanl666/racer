@@ -19,6 +19,7 @@ export const inTheZone: ModeDefinition = {
   timeLimit: 75,
   scoreUnit: 'POINTS',
   trafficScale: 0.9,
+  stars: [1000, 2100, 3300],
 
   setup(_run, cars) {
     // Spread the marks around the lap so the route is a tour, not a huddle.

@@ -30,6 +30,21 @@ function playMode(modeId, seconds, { weave = true } = {}) {
 }
 
 check('boots into the mode menu', game.app.screen === 'MENU', game.app.screen);
+
+// --- progression ladder (checked before unlocking everything) --------------
+check('only three modes are open from a standing start',
+  game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length === 3,
+  `${game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length} open`);
+check('a locked mode refuses to start', game.startMode('endurance') === false);
+check('refusing to start leaves you in the menu', game.app.screen === 'MENU');
+check('the first mode is playable', game.modeUnlocked(game.MODES[0].id));
+check('turbo is locked at zero stars', game.difficultyUnlocked('turbo') === false);
+check('every locked mode costs more than the one before it',
+  game.MODES.slice(3).every((mode, i, list) =>
+    i === 0 || game.modeUnlockCost(mode.id) > game.modeUnlockCost(list[i - 1].id)));
+
+// The suites below need every mode reachable.
+game.setUnlockOverride(true);
 check('sixteen modes are registered', game.MODES.length === 16, `${game.MODES.length} modes`);
 
 const seenIds = new Set(game.MODES.map((mode) => mode.id));

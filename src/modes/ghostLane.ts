@@ -23,6 +23,7 @@ export const ghostLane: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'PASSES',
   trafficScale: 1,
+  stars: [10, 20, 33],
 
   setup() {
     timer = SWITCH_SECONDS;

@@ -19,6 +19,7 @@ export const blackout: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'PASSES',
   trafficScale: 0.9,
+  stars: [15, 28, 43],
 
   setup() {
     effects.dim = 0;

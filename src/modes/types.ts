@@ -41,6 +41,12 @@ export interface RunState {
   crashes: number;
   /** Passes made close enough to an AI car to count as a near miss. */
   closeCalls: number;
+  /** True while running the daily challenge. */
+  daily: boolean;
+  /** Daily stage, 1 or 2; 0 for an ordinary run. */
+  stage: number;
+  /** Score that clears the current daily stage; 0 when there is no target. */
+  stageTarget: number;
   outcome: RunOutcome;
   /** Objective progress in 0..1, drawn as a bar. Negative means "no bar". */
   progress: number;

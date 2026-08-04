@@ -76,7 +76,8 @@ export function drawResult(): void {
 
   screenBackground(DESIGN_W, DESIGN_H);
 
-  headline(mode.name, DESIGN_W / 2, 56, 24, UI.card, 'center');
+  const title = summary.stage > 0 ? `每日挑战 · 第 ${summary.stage} 关` : mode.name;
+  headline(title, DESIGN_W / 2, 56, summary.stage > 0 ? 21 : 24, UI.card, 'center');
 
   ctx.font = '900 11px sans-serif';
   const diffLabel = DIFFICULTY_PROFILES[summary.difficulty].label;
@@ -105,8 +106,8 @@ export function drawResult(): void {
   ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
 
   // Stars are the progression currency, so they get the most weight after the score.
-  const earned = starsFor(summary.modeId, summary.difficulty);
-  for (let i = 0; i < 3; i++) {
+  const earned = summary.stage > 0 ? 0 : starsFor(summary.modeId, summary.difficulty);
+  for (let i = 0; i < 3 && summary.stage === 0; i++) {
     drawStar(DESIGN_W / 2 - 34 + i * 34, SCORE_CARD.y + 162, 14, i < earned ? UI.primary : 'rgba(34,50,63,0.16)', i < earned);
   }
 
@@ -114,7 +115,18 @@ export function drawResult(): void {
   ctx.textAlign = 'center';
   ctx.fillStyle = UI.inkSoft;
   ctx.font = '700 10px sans-serif';
-  if (summary.newBest) {
+  if (summary.stage > 0) {
+    // The daily stage has its own bar, and missing it is the story of the run.
+    ctx.fillStyle = summary.outcome === 'cleared' ? UI.good : UI.inkSoft;
+    ctx.font = '900 11px sans-serif';
+    ctx.fillText(
+      summary.outcome === 'cleared'
+        ? `过关目标 ${summary.stageTarget} ${summary.scoreUnit}`
+        : `差 ${Math.max(0, summary.stageTarget - summary.score)} ${summary.scoreUnit} 过关`,
+      DESIGN_W / 2,
+      SCORE_CARD.y + 192
+    );
+  } else if (summary.newBest) {
     ctx.fillStyle = UI.primaryDeep;
     ctx.font = '900 11px sans-serif';
     ctx.fillText('NEW BEST!', DESIGN_W / 2, SCORE_CARD.y + 192);
@@ -192,7 +204,9 @@ function drawGlobalBoard(listY: number, listH: number): void {
     return;
   }
 
-  const board = globalBoard(summary.modeId, summary.difficulty);
+  const board = summary.stage > 0
+    ? globalBoard('daily' as typeof summary.modeId, summary.difficulty, summary.day)
+    : globalBoard(summary.modeId, summary.difficulty);
   if (board.state === 'loading') {
     ctx.fillStyle = 'rgba(255,246,228,0.38)';
     ctx.font = '600 11px sans-serif';

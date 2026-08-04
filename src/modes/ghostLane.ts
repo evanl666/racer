@@ -3,6 +3,7 @@ import { effects } from '../effects';
 import { beginCollision } from '../player';
 import { player } from '../state';
 import type { ModeDefinition } from './types';
+import { random } from '../rng';
 
 const SWITCH_SECONDS = 4.5;
 const WARNING_SECONDS = 1.2;
@@ -28,7 +29,7 @@ export const ghostLane: ModeDefinition = {
 
   setup() {
     timer = SWITCH_SECONDS;
-    nextLane = Math.floor(Math.random() * LANE_COUNT);
+    nextLane = Math.floor(random() * LANE_COUNT);
     effects.hazardLane = -1;
   },
 
@@ -37,7 +38,7 @@ export const ghostLane: ModeDefinition = {
     if (timer <= 0) {
       effects.hazardLane = nextLane;
       // Never pick the same lane twice in a row: a static hazard stops being a decision.
-      let candidate = Math.floor(Math.random() * LANE_COUNT);
+      let candidate = Math.floor(random() * LANE_COUNT);
       if (candidate === nextLane) candidate = (candidate + 1) % LANE_COUNT;
       nextLane = candidate;
       timer = SWITCH_SECONDS;

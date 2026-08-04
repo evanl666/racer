@@ -7,7 +7,7 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "check": "tsc --noEmit",
-    "test": "node scripts/build.mjs && node tests/controls.test.mjs && node tests/modes.test.mjs",
+    "test": "node scripts/build.mjs && node tests/controls.test.mjs && node tests/modes.test.mjs && node tests/daily.test.mjs",
     "verify": "npm run check && npm test"
   },
   "devDependencies": {

@@ -3,7 +3,9 @@
 import { applyTuning } from './difficulty';
 import { resetEffects } from './effects';
 import { MODES, modeById } from './modes';
+import { clearSeed, setSeed } from './rng';
 import type { Difficulty, ModeDefinition, ModeId, RunState } from './modes/types';
+import { resetClock } from './clock';
 import { clearParticles } from './render/particles';
 import { resetFeel } from './feel';
 import { aiCars, player, resetGame } from './state';
@@ -18,6 +20,9 @@ export const run: RunState = {
   destroyed: 0,
   crashes: 0,
   closeCalls: 0,
+  daily: false,
+  stage: 0,
+  stageTarget: 0,
   outcome: 'running',
   progress: -1,
   banner: '',
@@ -26,8 +31,18 @@ export const run: RunState = {
 
 export let activeMode: ModeDefinition = MODES[0];
 
-export function startRun(modeId: ModeId, difficulty: Difficulty): void {
+export interface DailyRunOptions {
+  seed: number;
+  stage: 1 | 2;
+  target: number;
+}
+
+export function startRun(modeId: ModeId, difficulty: Difficulty, daily?: DailyRunOptions): void {
   activeMode = modeById(modeId);
+
+  // Seed before anything that draws randomness, so the whole run is reproducible.
+  if (daily) setSeed(daily.seed);
+  else clearSeed();
 
   // Order matters: the circuit defines the lap length that car placement uses,
   // and tuning defines the speeds they are built with.
@@ -37,6 +52,8 @@ export function startRun(modeId: ModeId, difficulty: Difficulty): void {
   resetEffects();
   resetFeel();
   clearParticles();
+  // However long the menu was open must not land on the first frame of the run.
+  resetClock();
 
   run.modeId = modeId;
   run.difficulty = difficulty;
@@ -46,6 +63,9 @@ export function startRun(modeId: ModeId, difficulty: Difficulty): void {
   run.destroyed = 0;
   run.crashes = 0;
   run.closeCalls = 0;
+  run.daily = Boolean(daily);
+  run.stage = daily ? daily.stage : 0;
+  run.stageTarget = daily ? daily.target : 0;
   run.outcome = 'running';
   run.progress = -1;
   run.banner = '';
@@ -70,8 +90,12 @@ export function updateRun(dt: number): void {
   // A mode's own update may already have ended the run (Speed Monkey on contact).
   if (run.outcome !== 'running') return;
 
-  if (activeMode.cleared?.(run, aiCars)) run.outcome = 'cleared';
-  else if (activeMode.failed?.(run, aiCars)) run.outcome = 'wrecked';
+  // A daily stage is cleared by its own target, not the mode's usual objective.
+  if (run.daily) {
+    if (run.score >= run.stageTarget) run.outcome = 'cleared';
+  } else if (activeMode.cleared?.(run, aiCars)) run.outcome = 'cleared';
+  if (run.outcome !== 'running') return;
+  if (activeMode.failed?.(run, aiCars)) run.outcome = 'wrecked';
   else if (run.timeRemaining <= 0) run.outcome = 'timeout';
 }
 

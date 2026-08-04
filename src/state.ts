@@ -15,6 +15,7 @@ import {
 import { tuning } from './difficulty';
 import { arc } from './track';
 import type { AiCar, EngineSnapshot, Player } from './types';
+import { random } from './rng';
 
 const STARTING_LANE = 2;
 
@@ -89,7 +90,7 @@ export function resetGame(): void {
       state: 'IDLE',
       stateElapsed: 0,
       direction: 0,
-      decisionTimer: (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
+      decisionTimer: (AI_MIN_DECISION_DELAY + random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
         tuning.profile.aiDecisionScale,
       passIndex: Math.floor((player.distance - distance) / arc.total),
       alive: true,

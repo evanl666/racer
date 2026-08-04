@@ -16,6 +16,7 @@ import { tuning } from './difficulty';
 import { aiCars, baseCruiseSpeed, player } from './state';
 import { advanceDistanceAtRoadSpeed, circularDistance, forwardPathDistance } from './track';
 import type { AiCar } from './types';
+import { random } from './rng';
 
 // At cruise speed, AI cars keep a modest no-lane-change zone in front of the player.
 // As the red car accelerates, this zone grows so high-speed runs remain readable and fair.
@@ -71,7 +72,7 @@ function isAiTargetLaneClear(car: AiCar, targetLane: number): boolean {
 }
 
 function shuffledDirections(): number[] {
-  return Math.random() < 0.5 ? [-1, 1] : [1, -1];
+  return random() < 0.5 ? [-1, 1] : [1, -1];
 }
 
 function tryBeginAiLaneChange(car: AiCar): boolean {
@@ -80,7 +81,7 @@ function tryBeginAiLaneChange(car: AiCar): boolean {
 
   const ahead = nearestAiAhead(car, car.visualLane, 62);
   const needsToPass = Boolean(ahead && ahead.car.speed + 2 < car.baseSpeed && ahead.distance < 46);
-  if (!needsToPass && Math.random() > 0.34) return false;
+  if (!needsToPass && random() > 0.34) return false;
 
   const directions = shuffledDirections();
   for (const direction of directions) {
@@ -110,7 +111,7 @@ export function updateAi(dt: number): void {
     car.decisionTimer -= dt;
 
     if (car.state === 'IDLE' && car.decisionTimer <= 0) {
-      car.decisionTimer = (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
+      car.decisionTimer = (AI_MIN_DECISION_DELAY + random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
         tuning.profile.aiDecisionScale;
       tryBeginAiLaneChange(car);
     } else if (car.state === 'WARNING') {
@@ -119,7 +120,7 @@ export function updateAi(dt: number): void {
         car.state = 'IDLE';
         car.stateElapsed = 0;
         car.direction = 0;
-        car.decisionTimer = 0.55 + Math.random() * 0.75;
+        car.decisionTimer = 0.55 + random() * 0.75;
       } else if (car.stateElapsed >= AI_WARNING_DURATION) {
         car.state = 'CHANGING';
         car.stateElapsed = 0;
@@ -137,7 +138,7 @@ export function updateAi(dt: number): void {
         car.state = 'IDLE';
         car.stateElapsed = 0;
         car.direction = 0;
-        car.decisionTimer = 0.9 + Math.random() * 1.5;
+        car.decisionTimer = 0.9 + random() * 1.5;
       }
     }
 

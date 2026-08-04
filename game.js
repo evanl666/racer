@@ -46,20 +46,28 @@ var HarborLoop = (() => {
     app: () => app,
     bestScore: () => bestScore,
     careerPoints: () => careerPoints,
+    clearSeed: () => clearSeed,
+    dailyPlan: () => dailyPlan,
+    dailyStage: () => dailyStage,
     debugPointerCount: () => debugPointerCount,
     difficultyUnlocked: () => difficultyUnlocked,
     feelState: () => feelState,
     inputState: () => inputState,
+    isSeeded: () => isSeeded,
     laneButtonFlash: () => laneButtonFlash,
     modeUnlockCost: () => modeUnlockCost,
     modeUnlocked: () => modeUnlocked,
     openMenu: () => openMenu,
     player: () => player,
+    random: () => random,
     retryRun: () => retryRun,
     run: () => run,
+    setSeed: () => setSeed,
     setUnlockOverride: () => setUnlockOverride,
     starsFor: () => starsFor,
+    startDaily: () => startDaily,
     startMode: () => startMode,
+    todayKey: () => todayKey,
     totalStars: () => totalStars,
     trackLength: () => trackLength
   });
@@ -451,6 +459,36 @@ var HarborLoop = (() => {
   }
   setTrack(DEFAULT_TRACK_ID);
 
+  // src/rng.ts
+  var state = 0;
+  var seeded = false;
+  function setSeed(seed) {
+    state = seed >>> 0 || 1;
+    seeded = true;
+  }
+  function clearSeed() {
+    seeded = false;
+  }
+  function isSeeded() {
+    return seeded;
+  }
+  function random() {
+    if (!seeded) return Math.random();
+    state = state + 1831565813 >>> 0;
+    let t = state;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+  function hashSeed(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
   // src/state.ts
   var STARTING_LANE = 2;
   var inputState = {
@@ -520,7 +558,7 @@ var HarborLoop = (() => {
         state: "IDLE",
         stateElapsed: 0,
         direction: 0,
-        decisionTimer: (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale,
+        decisionTimer: (AI_MIN_DECISION_DELAY + random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale,
         passIndex: Math.floor((player.distance - distance) / arc.total),
         alive: true,
         wreck: 0,
@@ -599,14 +637,14 @@ var HarborLoop = (() => {
     return true;
   }
   function shuffledDirections() {
-    return Math.random() < 0.5 ? [-1, 1] : [1, -1];
+    return random() < 0.5 ? [-1, 1] : [1, -1];
   }
   function tryBeginAiLaneChange(car) {
     if (countActiveAiLaneChanges() >= tuning.profile.maxSimultaneousAi) return false;
     if (playerIsApproachingAi(car)) return false;
     const ahead = nearestAiAhead(car, car.visualLane, 62);
     const needsToPass = Boolean(ahead && ahead.car.speed + 2 < car.baseSpeed && ahead.distance < 46);
-    if (!needsToPass && Math.random() > 0.34) return false;
+    if (!needsToPass && random() > 0.34) return false;
     const directions = shuffledDirections();
     for (const direction of directions) {
       const targetLane = car.lane + direction;
@@ -631,7 +669,7 @@ var HarborLoop = (() => {
       car.previousVisualLane = car.visualLane;
       car.decisionTimer -= dt;
       if (car.state === "IDLE" && car.decisionTimer <= 0) {
-        car.decisionTimer = (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale;
+        car.decisionTimer = (AI_MIN_DECISION_DELAY + random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale;
         tryBeginAiLaneChange(car);
       } else if (car.state === "WARNING") {
         car.stateElapsed += dt;
@@ -639,7 +677,7 @@ var HarborLoop = (() => {
           car.state = "IDLE";
           car.stateElapsed = 0;
           car.direction = 0;
-          car.decisionTimer = 0.55 + Math.random() * 0.75;
+          car.decisionTimer = 0.55 + random() * 0.75;
         } else if (car.stateElapsed >= AI_WARNING_DURATION) {
           car.state = "CHANGING";
           car.stateElapsed = 0;
@@ -657,7 +695,7 @@ var HarborLoop = (() => {
           car.state = "IDLE";
           car.stateElapsed = 0;
           car.direction = 0;
-          car.decisionTimer = 0.9 + Math.random() * 1.5;
+          car.decisionTimer = 0.9 + random() * 1.5;
         }
       }
       const ahead = nearestAiAhead(car, car.visualLane, 34);
@@ -667,143 +705,6 @@ var HarborLoop = (() => {
       car.speed += (desiredSpeed - car.speed) * response;
       car.distance = advanceDistanceAtRoadSpeed(car.distance, car.speed, dt, car.visualLane);
     }
-  }
-
-  // src/cloud.ts
-  var CLOUD_ENV = "";
-  var initialised = false;
-  var unavailable = false;
-  function api() {
-    if (unavailable) return null;
-    const scope = wx;
-    const cloud = scope.cloud;
-    if (!cloud || typeof cloud.callFunction !== "function" || !CLOUD_ENV) {
-      unavailable = true;
-      return null;
-    }
-    if (!initialised) {
-      try {
-        cloud.init({ env: CLOUD_ENV, traceUser: true });
-        initialised = true;
-      } catch (error) {
-        unavailable = true;
-        return null;
-      }
-    }
-    return cloud;
-  }
-  function cloudAvailable() {
-    return api() !== null;
-  }
-  function callFunction(name, data) {
-    const cloud = api();
-    if (!cloud) return Promise.resolve(null);
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      try {
-        cloud.callFunction({
-          name,
-          data,
-          success: (res) => {
-            var _a;
-            return finish((_a = res == null ? void 0 : res.result) != null ? _a : null);
-          },
-          fail: () => finish(null)
-        });
-      } catch (error) {
-        finish(null);
-      }
-      setTimeout(() => finish(null), 6e3);
-    });
-  }
-
-  // src/leaderboard.ts
-  var openDataContext = null;
-  var openDataChecked = false;
-  function context() {
-    if (openDataChecked) return openDataContext;
-    openDataChecked = true;
-    const api2 = wx;
-    if (typeof api2.getOpenDataContext === "function") {
-      try {
-        openDataContext = api2.getOpenDataContext();
-      } catch (error) {
-        openDataContext = null;
-      }
-    }
-    return openDataContext;
-  }
-  function leaderboardAvailable() {
-    return context() !== null;
-  }
-  function submitFriendScore(points) {
-    const api2 = wx;
-    if (typeof api2.setUserCloudStorage !== "function") return;
-    try {
-      api2.setUserCloudStorage({
-        // WeChat requires string values; the key is what the open data context reads.
-        KVDataList: [{ key: "career", value: String(Math.round(points)) }],
-        fail: () => {
-        }
-      });
-    } catch (error) {
-    }
-  }
-  function requestFriendRanking(width, height, dpr) {
-    const ctx2 = context();
-    if (!ctx2) return;
-    try {
-      ctx2.canvas.width = Math.floor(width * dpr);
-      ctx2.canvas.height = Math.floor(height * dpr);
-      ctx2.postMessage({ type: "render", key: "career", width, height, dpr });
-    } catch (error) {
-    }
-  }
-  function sharedCanvas() {
-    const ctx2 = context();
-    return ctx2 ? ctx2.canvas : null;
-  }
-  var boards = /* @__PURE__ */ new Map();
-  function boardKey(modeId, difficulty, day) {
-    return `${modeId}:${difficulty}:${day}`;
-  }
-  function globalBoardAvailable() {
-    return cloudAvailable();
-  }
-  function submitGlobalScore(modeId, difficulty, score, lowerIsBetter, day = "") {
-    if (!cloudAvailable()) return;
-    void callFunction("submitScore", { modeId, difficulty, score, lowerIsBetter, day });
-    boards.delete(boardKey(modeId, difficulty, day));
-  }
-  function globalBoard(modeId, difficulty, day = "") {
-    const key2 = boardKey(modeId, difficulty, day);
-    const cached = boards.get(key2);
-    if (cached) return cached;
-    const board = {
-      rows: [],
-      selfRank: null,
-      total: 0,
-      state: cloudAvailable() ? "loading" : "unavailable"
-    };
-    boards.set(key2, board);
-    if (board.state === "unavailable") return board;
-    void callFunction("topScores", { modeId, difficulty, day, limit: 20 }).then((result) => {
-      var _a, _b, _c;
-      if (!result || !result.ok) {
-        board.state = "failed";
-        return;
-      }
-      board.rows = (_a = result.rows) != null ? _a : [];
-      board.selfRank = (_b = result.selfRank) != null ? _b : null;
-      board.total = (_c = result.total) != null ? _c : 0;
-      board.state = "ready";
-    });
-    return board;
   }
 
   // src/effects.ts
@@ -1537,14 +1438,14 @@ var HarborLoop = (() => {
     stars: [10, 20, 33],
     setup() {
       timer = SWITCH_SECONDS;
-      nextLane = Math.floor(Math.random() * LANE_COUNT);
+      nextLane = Math.floor(random() * LANE_COUNT);
       effects.hazardLane = -1;
     },
     update(dt, run2) {
       timer -= dt;
       if (timer <= 0) {
         effects.hazardLane = nextLane;
-        let candidate = Math.floor(Math.random() * LANE_COUNT);
+        let candidate = Math.floor(random() * LANE_COUNT);
         if (candidate === nextLane) candidate = (candidate + 1) % LANE_COUNT;
         nextLane = candidate;
         timer = SWITCH_SECONDS;
@@ -1675,7 +1576,7 @@ var HarborLoop = (() => {
         timer2 = CULL_INTERVAL;
         const alive2 = cars.filter((car) => car.alive);
         if (alive2.length > 2) {
-          const victim = alive2[Math.floor(Math.random() * alive2.length)];
+          const victim = alive2[Math.floor(random() * alive2.length)];
           victim.alive = false;
           victim.wreck = 1;
           run2.banner = `${alive2.length - 1} LEFT`;
@@ -1892,6 +1793,164 @@ var HarborLoop = (() => {
     return mode;
   }
 
+  // src/daily.ts
+  var DAILY_POOL = MODES.filter((mode) => !mode.lowerIsBetter).map((mode) => mode.id);
+  function pad(value) {
+    return value < 10 ? `0${value}` : String(value);
+  }
+  function todayKey(now = /* @__PURE__ */ new Date()) {
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+  function dailyPlan(day = todayKey()) {
+    const seed = hashSeed(`harbor-loop:${day}`);
+    const modeIndex = hashSeed(`mode:${day}`) % DAILY_POOL.length;
+    return { day, modeId: DAILY_POOL[modeIndex], seed };
+  }
+  function dailyStage(plan, stage) {
+    const mode = modeById(plan.modeId);
+    if (stage === 1) {
+      return { stage: 1, difficulty: "normal", target: mode.stars[0] };
+    }
+    return { stage: 2, difficulty: "master", target: Math.round(mode.stars[2] * 1.45) };
+  }
+
+  // src/cloud.ts
+  var CLOUD_ENV = "";
+  var initialised = false;
+  var unavailable = false;
+  function api() {
+    if (unavailable) return null;
+    const scope = wx;
+    const cloud = scope.cloud;
+    if (!cloud || typeof cloud.callFunction !== "function" || !CLOUD_ENV) {
+      unavailable = true;
+      return null;
+    }
+    if (!initialised) {
+      try {
+        cloud.init({ env: CLOUD_ENV, traceUser: true });
+        initialised = true;
+      } catch (error) {
+        unavailable = true;
+        return null;
+      }
+    }
+    return cloud;
+  }
+  function cloudAvailable() {
+    return api() !== null;
+  }
+  function callFunction(name, data) {
+    const cloud = api();
+    if (!cloud) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        cloud.callFunction({
+          name,
+          data,
+          success: (res) => {
+            var _a;
+            return finish((_a = res == null ? void 0 : res.result) != null ? _a : null);
+          },
+          fail: () => finish(null)
+        });
+      } catch (error) {
+        finish(null);
+      }
+      setTimeout(() => finish(null), 6e3);
+    });
+  }
+
+  // src/leaderboard.ts
+  var openDataContext = null;
+  var openDataChecked = false;
+  function context() {
+    if (openDataChecked) return openDataContext;
+    openDataChecked = true;
+    const api2 = wx;
+    if (typeof api2.getOpenDataContext === "function") {
+      try {
+        openDataContext = api2.getOpenDataContext();
+      } catch (error) {
+        openDataContext = null;
+      }
+    }
+    return openDataContext;
+  }
+  function leaderboardAvailable() {
+    return context() !== null;
+  }
+  function submitFriendScore(points) {
+    const api2 = wx;
+    if (typeof api2.setUserCloudStorage !== "function") return;
+    try {
+      api2.setUserCloudStorage({
+        // WeChat requires string values; the key is what the open data context reads.
+        KVDataList: [{ key: "career", value: String(Math.round(points)) }],
+        fail: () => {
+        }
+      });
+    } catch (error) {
+    }
+  }
+  function requestFriendRanking(width, height, dpr) {
+    const ctx2 = context();
+    if (!ctx2) return;
+    try {
+      ctx2.canvas.width = Math.floor(width * dpr);
+      ctx2.canvas.height = Math.floor(height * dpr);
+      ctx2.postMessage({ type: "render", key: "career", width, height, dpr });
+    } catch (error) {
+    }
+  }
+  function sharedCanvas() {
+    const ctx2 = context();
+    return ctx2 ? ctx2.canvas : null;
+  }
+  var boards = /* @__PURE__ */ new Map();
+  function boardKey(modeId, difficulty, day) {
+    return `${modeId}:${difficulty}:${day}`;
+  }
+  function globalBoardAvailable() {
+    return cloudAvailable();
+  }
+  function submitGlobalScore(modeId, difficulty, score, lowerIsBetter, day = "") {
+    if (!cloudAvailable()) return;
+    void callFunction("submitScore", { modeId, difficulty, score, lowerIsBetter, day });
+    boards.delete(boardKey(modeId, difficulty, day));
+  }
+  function globalBoard(modeId, difficulty, day = "") {
+    const key2 = boardKey(modeId, difficulty, day);
+    const cached = boards.get(key2);
+    if (cached) return cached;
+    const board = {
+      rows: [],
+      selfRank: null,
+      total: 0,
+      state: cloudAvailable() ? "loading" : "unavailable"
+    };
+    boards.set(key2, board);
+    if (board.state === "unavailable") return board;
+    void callFunction("topScores", { modeId, difficulty, day, limit: 20 }).then((result) => {
+      var _a, _b, _c;
+      if (!result || !result.ok) {
+        board.state = "failed";
+        return;
+      }
+      board.rows = (_a = result.rows) != null ? _a : [];
+      board.selfRank = (_b = result.selfRank) != null ? _b : null;
+      board.total = (_c = result.total) != null ? _c : 0;
+      board.state = "ready";
+    });
+    return board;
+  }
+
   // src/storage.ts
   var STORAGE_KEY = "harbor-loop-bests-v1";
   var cache = null;
@@ -2043,6 +2102,25 @@ var HarborLoop = (() => {
     return Math.round(starTarget(mode, earned, difficulty));
   }
 
+  // src/clock.ts
+  var MAX_DELTA = 0.05;
+  var NOMINAL_DELTA = 1 / 60;
+  var lastTime = null;
+  var restarting = true;
+  function frameDelta(now) {
+    if (restarting || lastTime === null) {
+      restarting = false;
+      lastTime = now;
+      return NOMINAL_DELTA;
+    }
+    const dt = Math.min(MAX_DELTA, Math.max(0, (now - lastTime) / 1e3));
+    lastTime = now;
+    return dt;
+  }
+  function resetClock() {
+    restarting = true;
+  }
+
   // src/render/particles.ts
   var POOL_SIZE = 160;
   var pool = Array.from({ length: POOL_SIZE }, () => ({
@@ -2137,7 +2215,7 @@ var HarborLoop = (() => {
 
   // src/feel.ts
   var MAX_SHAKE = 9;
-  var state = {
+  var state2 = {
     /** Seconds of simulation freeze left. */
     hitStop: 0,
     shake: 0,
@@ -2145,38 +2223,38 @@ var HarborLoop = (() => {
     shakeTime: 0
   };
   function addHitStop(seconds) {
-    state.hitStop = Math.max(state.hitStop, seconds);
+    state2.hitStop = Math.max(state2.hitStop, seconds);
   }
   function addShake(strength, angle = Math.random() * Math.PI * 2) {
-    if (strength <= state.shake) return;
-    state.shake = Math.min(MAX_SHAKE, strength);
-    state.shakeAngle = angle;
-    state.shakeTime = 0;
+    if (strength <= state2.shake) return;
+    state2.shake = Math.min(MAX_SHAKE, strength);
+    state2.shakeAngle = angle;
+    state2.shakeTime = 0;
   }
   function consumeHitStop(dt) {
-    if (state.hitStop <= 0) return dt;
-    state.hitStop = Math.max(0, state.hitStop - dt);
+    if (state2.hitStop <= 0) return dt;
+    state2.hitStop = Math.max(0, state2.hitStop - dt);
     return 0;
   }
   function updateFeel(dt) {
-    state.shakeTime += dt;
-    state.shake = Math.max(0, state.shake - dt * 52);
+    state2.shakeTime += dt;
+    state2.shake = Math.max(0, state2.shake - dt * 52);
   }
   function shakeOffsetX() {
-    if (state.shake <= 0) return 0;
-    return Math.cos(state.shakeAngle + state.shakeTime * 47) * state.shake;
+    if (state2.shake <= 0) return 0;
+    return Math.cos(state2.shakeAngle + state2.shakeTime * 47) * state2.shake;
   }
   function shakeOffsetY() {
-    if (state.shake <= 0) return 0;
-    return Math.sin(state.shakeAngle + state.shakeTime * 41) * state.shake * 0.7;
+    if (state2.shake <= 0) return 0;
+    return Math.sin(state2.shakeAngle + state2.shakeTime * 41) * state2.shake * 0.7;
   }
   function resetFeel() {
-    state.hitStop = 0;
-    state.shake = 0;
-    state.shakeTime = 0;
+    state2.hitStop = 0;
+    state2.shake = 0;
+    state2.shakeTime = 0;
   }
   function feelState() {
-    return { hitStop: state.hitStop, shake: state.shake };
+    return { hitStop: state2.hitStop, shake: state2.shake };
   }
 
   // src/run.ts
@@ -2189,21 +2267,27 @@ var HarborLoop = (() => {
     destroyed: 0,
     crashes: 0,
     closeCalls: 0,
+    daily: false,
+    stage: 0,
+    stageTarget: 0,
     outcome: "running",
     progress: -1,
     banner: "",
     bannerTimer: 0
   };
   var activeMode = MODES[0];
-  function startRun(modeId, difficulty) {
+  function startRun(modeId, difficulty, daily) {
     var _a;
     activeMode = modeById(modeId);
+    if (daily) setSeed(daily.seed);
+    else clearSeed();
     setTrack(activeMode.trackId);
     applyTuning(difficulty, activeMode.trafficScale);
     resetGame();
     resetEffects();
     resetFeel();
     clearParticles();
+    resetClock();
     run.modeId = modeId;
     run.difficulty = difficulty;
     run.elapsed = 0;
@@ -2212,6 +2296,9 @@ var HarborLoop = (() => {
     run.destroyed = 0;
     run.crashes = 0;
     run.closeCalls = 0;
+    run.daily = Boolean(daily);
+    run.stage = daily ? daily.stage : 0;
+    run.stageTarget = daily ? daily.target : 0;
     run.outcome = "running";
     run.progress = -1;
     run.banner = "";
@@ -2229,8 +2316,11 @@ var HarborLoop = (() => {
     if (run.bannerTimer <= 0) run.banner = "";
     (_a = activeMode.update) == null ? void 0 : _a.call(activeMode, dt, run, aiCars);
     if (run.outcome !== "running") return;
-    if ((_b = activeMode.cleared) == null ? void 0 : _b.call(activeMode, run, aiCars)) run.outcome = "cleared";
-    else if ((_c = activeMode.failed) == null ? void 0 : _c.call(activeMode, run, aiCars)) run.outcome = "wrecked";
+    if (run.daily) {
+      if (run.score >= run.stageTarget) run.outcome = "cleared";
+    } else if ((_b = activeMode.cleared) == null ? void 0 : _b.call(activeMode, run, aiCars)) run.outcome = "cleared";
+    if (run.outcome !== "running") return;
+    if ((_c = activeMode.failed) == null ? void 0 : _c.call(activeMode, run, aiCars)) run.outcome = "wrecked";
     else if (run.timeRemaining <= 0) run.outcome = "timeout";
   }
   function runIsOver() {
@@ -2254,17 +2344,40 @@ var HarborLoop = (() => {
     app.screen = "PLAYING";
     return true;
   }
+  function startDaily() {
+    const plan = dailyPlan();
+    const stage = dailyStage(plan, 1);
+    startRun(plan.modeId, stage.difficulty, { seed: plan.seed, stage: 1, target: stage.target });
+    app.screen = "PLAYING";
+  }
+  function startDailyStageTwo() {
+    const plan = dailyPlan();
+    const stage = dailyStage(plan, 2);
+    startRun(plan.modeId, stage.difficulty, { seed: plan.seed, stage: 2, target: stage.target });
+    app.screen = "PLAYING";
+  }
   function retryRun() {
     const summary = app.result;
-    if (summary) startRun(summary.modeId, summary.difficulty);
-    else startMode(MODES[0].id);
-    app.screen = "PLAYING";
+    if (!summary) {
+      startMode(MODES[0].id);
+      return;
+    }
+    if (summary.stage === 1) startDaily();
+    else if (summary.stage === 2) startDailyStageTwo();
+    else {
+      startRun(summary.modeId, summary.difficulty);
+      app.screen = "PLAYING";
+    }
   }
   function finishRun() {
     const mode = modeById(run.modeId);
     const lowerIsBetter = Boolean(mode.lowerIsBetter);
+    if (run.daily && run.stage === 1 && run.outcome === "cleared") {
+      startDailyStageTwo();
+      return;
+    }
     const scoreCounts = run.score > 0 && !(lowerIsBetter && run.outcome !== "cleared");
-    const newBest = scoreCounts && submitScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
+    const newBest = !run.daily && scoreCounts && submitScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
     app.result = {
       modeId: run.modeId,
       difficulty: run.difficulty,
@@ -2272,9 +2385,15 @@ var HarborLoop = (() => {
       score: run.score,
       best: bestScore(run.modeId, run.difficulty),
       newBest,
-      scoreUnit: mode.scoreUnit
+      scoreUnit: mode.scoreUnit,
+      stage: run.stage,
+      stageTarget: run.stageTarget,
+      day: run.daily ? todayKey() : ""
     };
-    if (newBest) {
+    if (run.daily) {
+      submitGlobalScore("daily", run.difficulty, run.score, false, todayKey());
+      submitFriendScore(careerPoints());
+    } else if (newBest) {
       submitFriendScore(careerPoints());
       submitGlobalScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
     }
@@ -2642,9 +2761,11 @@ var HarborLoop = (() => {
   var MARGIN = 14;
   var PILL_Y = 78;
   var PILL_H = 34;
-  var LIST_TOP = 148;
-  var ROW_H = 38;
-  var ROW_GAP = 3;
+  var DAILY_Y = 142;
+  var DAILY_H = 44;
+  var LIST_TOP = 196;
+  var ROW_H = 36;
+  var ROW_GAP = 2;
   var toast = { text: "", timer: 0 };
   function updateMenu(dt) {
     toast.timer = Math.max(0, toast.timer - dt);
@@ -2654,6 +2775,7 @@ var HarborLoop = (() => {
     const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
     return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
   }
+  var DAILY_RECT = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
   function rowRect(index) {
     return {
       x: MARGIN,
@@ -2696,11 +2818,15 @@ var HarborLoop = (() => {
       });
       ctx.textAlign = "center";
       if (!unlocked) {
-        drawLock(rect.x + rect.w / 2 - 16, rect.y + rect.h / 2, 9, "rgba(255,246,228,0.5)");
-        ctx.fillStyle = "rgba(255,246,228,0.5)";
+        const cost = String(difficultyUnlockCost(difficulty));
         ctx.font = "900 11px sans-serif";
-        ctx.fillText(`${difficultyUnlockCost(difficulty)}`, rect.x + rect.w / 2 + 10, rect.y + rect.h / 2 + 4);
-        drawStar(rect.x + rect.w / 2 - 1, rect.y + rect.h / 2 - 1, 5, "rgba(255,246,228,0.5)", true);
+        const width = ctx.measureText(cost).width;
+        const centre = rect.x + rect.w / 2;
+        drawLock(centre - width / 2 - 16, rect.y + rect.h / 2, 9, "rgba(255,246,228,0.5)");
+        drawStar(centre - width / 2 - 2, rect.y + rect.h / 2 - 1, 5, "rgba(255,246,228,0.5)", true);
+        ctx.textAlign = "left";
+        ctx.fillStyle = "rgba(255,246,228,0.5)";
+        ctx.fillText(cost, centre - width / 2 + 6, rect.y + rect.h / 2 + 4);
       } else {
         ctx.fillStyle = selected ? UI.ink : UI.card;
         ctx.font = "900 13px sans-serif";
@@ -2711,6 +2837,7 @@ var HarborLoop = (() => {
     ctx.fillStyle = "rgba(255,246,228,0.72)";
     ctx.font = "600 11px sans-serif";
     ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
+    drawDailyCard();
     MODES.forEach((mode, index) => {
       drawModeRow(mode.id, index, stars);
     });
@@ -2731,6 +2858,26 @@ var HarborLoop = (() => {
     }
     ctx.textAlign = "center";
   }
+  function drawDailyCard() {
+    const plan = dailyPlan();
+    const mode = MODES.find((entry) => entry.id === plan.modeId);
+    panel(DAILY_RECT, { fill: UI.primary, radius: 13, lift: 4 });
+    ctx.textAlign = "left";
+    ctx.fillStyle = UI.ink;
+    ctx.font = "900 14px sans-serif";
+    ctx.fillText("每日挑战", DAILY_RECT.x + 14, DAILY_RECT.y + 20);
+    ctx.font = "600 9.5px sans-serif";
+    ctx.fillStyle = "rgba(34,50,63,0.7)";
+    ctx.fillText(
+      `${plan.day} · ${mode ? mode.name : ""} · 两关 · 全服同一份车流`,
+      DAILY_RECT.x + 14,
+      DAILY_RECT.y + 35
+    );
+    ctx.textAlign = "right";
+    ctx.fillStyle = UI.ink;
+    ctx.font = "900 12px sans-serif";
+    ctx.fillText("开始 ▸", DAILY_RECT.x + DAILY_RECT.w - 14, DAILY_RECT.y + 27);
+  }
   function drawModeRow(modeId, index, stars) {
     const mode = MODES[index];
     const rect = rowRect(index);
@@ -2748,11 +2895,13 @@ var HarborLoop = (() => {
       ctx.fillStyle = "rgba(255,246,228,0.5)";
       ctx.font = "900 12px sans-serif";
       ctx.fillText(mode.name, rect.x + 40, rect.y + 24);
+      const costText = String(modeUnlockCost(modeId));
       ctx.textAlign = "right";
       ctx.fillStyle = UI.primary;
       ctx.font = "900 13px sans-serif";
-      ctx.fillText(`${modeUnlockCost(modeId)}`, rect.x + rect.w - 14, rect.y + 25);
-      drawStar(rect.x + rect.w - 30, rect.y + rect.h / 2 - 1, 6, UI.primary, true);
+      ctx.fillText(costText, rect.x + rect.w - 14, rect.y + 24);
+      const costWidth = ctx.measureText(costText).width;
+      drawStar(rect.x + rect.w - 22 - costWidth, rect.y + rect.h / 2 - 1, 6, UI.primary, true);
       return;
     }
     ctx.textAlign = "left";
@@ -2764,11 +2913,11 @@ var HarborLoop = (() => {
     ctx.font = "900 8px sans-serif";
     ctx.fillText(fromOriginal ? "PJ" : "NEW", rect.x + 17 + nameWidth, rect.y + 12);
     ctx.fillStyle = UI.inkSoft;
-    ctx.font = "500 9.5px sans-serif";
-    ctx.fillText(mode.rule, rect.x + 12, rect.y + 30);
-    ctx.fillStyle = "rgba(34,50,63,0.34)";
-    ctx.font = "700 7.5px sans-serif";
-    ctx.fillText(trackById(mode.trackId).name, rect.x + 12, rect.y + 39.5);
+    ctx.font = "500 9px sans-serif";
+    ctx.fillText(mode.rule, rect.x + 12, rect.y + 29);
+    ctx.fillStyle = "rgba(34,50,63,0.3)";
+    ctx.font = "700 7px sans-serif";
+    ctx.fillText(trackById(mode.trackId).name, rect.x + rect.w - 118, rect.y + 29);
     const earned = starsFor(modeId, app.difficulty);
     for (let i = 0; i < 3; i++) {
       drawStar(rect.x + rect.w - 66 + i * 15, rect.y + 14, 6, i < earned ? UI.primary : "rgba(34,50,63,0.18)", i < earned);
@@ -2787,6 +2936,10 @@ var HarborLoop = (() => {
   }
   function handleMenuTap(x, y) {
     const stars = totalStars();
+    if (hits(DAILY_RECT, x, y)) {
+      startDaily();
+      return true;
+    }
     for (let i = 0; i < DIFFICULTIES.length; i++) {
       if (!hits(pillRect(i), x, y)) continue;
       const difficulty = DIFFICULTIES[i];
@@ -2885,7 +3038,8 @@ var HarborLoop = (() => {
     const mode = modeById(summary.modeId);
     const outcome = (_a = OUTCOME[summary.outcome]) != null ? _a : OUTCOME.running;
     screenBackground(DESIGN_W, DESIGN_H);
-    headline(mode.name, DESIGN_W / 2, 56, 24, UI.card, "center");
+    const title = summary.stage > 0 ? `每日挑战 · 第 ${summary.stage} 关` : mode.name;
+    headline(title, DESIGN_W / 2, 56, summary.stage > 0 ? 21 : 24, UI.card, "center");
     ctx.font = "900 11px sans-serif";
     const diffLabel = DIFFICULTY_PROFILES[summary.difficulty].label;
     const diffWidth = Math.max(72, ctx.measureText(diffLabel).width + 32);
@@ -2906,15 +3060,23 @@ var HarborLoop = (() => {
     ctx.fillStyle = UI.inkSoft;
     ctx.font = "900 11px sans-serif";
     ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
-    const earned = starsFor(summary.modeId, summary.difficulty);
-    for (let i = 0; i < 3; i++) {
+    const earned = summary.stage > 0 ? 0 : starsFor(summary.modeId, summary.difficulty);
+    for (let i = 0; i < 3 && summary.stage === 0; i++) {
       drawStar(DESIGN_W / 2 - 34 + i * 34, SCORE_CARD.y + 162, 14, i < earned ? UI.primary : "rgba(34,50,63,0.16)", i < earned);
     }
     const target = nextStarTarget(summary.modeId, summary.difficulty);
     ctx.textAlign = "center";
     ctx.fillStyle = UI.inkSoft;
     ctx.font = "700 10px sans-serif";
-    if (summary.newBest) {
+    if (summary.stage > 0) {
+      ctx.fillStyle = summary.outcome === "cleared" ? UI.good : UI.inkSoft;
+      ctx.font = "900 11px sans-serif";
+      ctx.fillText(
+        summary.outcome === "cleared" ? `过关目标 ${summary.stageTarget} ${summary.scoreUnit}` : `差 ${Math.max(0, summary.stageTarget - summary.score)} ${summary.scoreUnit} 过关`,
+        DESIGN_W / 2,
+        SCORE_CARD.y + 192
+      );
+    } else if (summary.newBest) {
       ctx.fillStyle = UI.primaryDeep;
       ctx.font = "900 11px sans-serif";
       ctx.fillText("NEW BEST!", DESIGN_W / 2, SCORE_CARD.y + 192);
@@ -2976,7 +3138,7 @@ var HarborLoop = (() => {
       ctx.fillText("见 README 的云开发部署说明", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2 + 10);
       return;
     }
-    const board = globalBoard(summary.modeId, summary.difficulty);
+    const board = summary.stage > 0 ? globalBoard("daily", summary.difficulty, summary.day) : globalBoard(summary.modeId, summary.difficulty);
     if (board.state === "loading") {
       ctx.fillStyle = "rgba(255,246,228,0.38)";
       ctx.font = "600 11px sans-serif";
@@ -3709,7 +3871,6 @@ var HarborLoop = (() => {
   }
 
   // src/main.ts
-  var lastTime = Date.now();
   function stepRace(dt) {
     updateControlFlash(dt);
     updateFeel(dt);
@@ -3743,8 +3904,7 @@ var HarborLoop = (() => {
   }
   function frame(nowValue) {
     const now = typeof nowValue === "number" ? nowValue : Date.now();
-    const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1e3));
-    lastTime = now;
+    const dt = frameDelta(now);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     if (app.screen === "PLAYING") {

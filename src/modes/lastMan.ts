@@ -1,5 +1,6 @@
 import { player } from '../state';
 import type { ModeDefinition } from './types';
+import { random } from '../rng';
 
 const CULL_INTERVAL = 4.0;
 
@@ -33,7 +34,7 @@ export const lastMan: ModeDefinition = {
       const alive = cars.filter((car) => car.alive);
       // Keep two cars on track so there is always something left to pass.
       if (alive.length > 2) {
-        const victim = alive[Math.floor(Math.random() * alive.length)];
+        const victim = alive[Math.floor(random() * alive.length)];
         victim.alive = false;
         victim.wreck = 1.0;
         run.banner = `${alive.length - 1} LEFT`;

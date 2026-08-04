@@ -19,6 +19,7 @@
 import { updateAi } from './ai';
 import { app, finishRun } from './app';
 import { audio } from './audio';
+import { frameDelta } from './clock';
 import { updateControlFlash } from './controls';
 import { consumeHitStop, shakeOffsetX, shakeOffsetY, updateFeel } from './feel';
 import { installInput, releaseAllPointers } from './input';
@@ -36,8 +37,6 @@ import { drawResult, enterResultScreen } from './screens/result';
 import { detectCollisions, detectOvertakes } from './scoring';
 import { installShareMenu } from './share';
 import { aiCars, engineSnapshot, inputState, player } from './state';
-
-let lastTime = Date.now();
 
 function stepRace(dt: number): void {
   updateControlFlash(dt);
@@ -84,8 +83,7 @@ function drawRace(): void {
 
 function frame(nowValue?: number): void {
   const now = typeof nowValue === 'number' ? nowValue : Date.now();
-  const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
-  lastTime = now;
+  const dt = frameDelta(now);
 
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
@@ -134,7 +132,7 @@ scheduleFrame(frame);
  * poking at state from the WeChat devtools console.
  */
 export { player, aiCars, inputState };
-export { app, startMode, openMenu, retryRun } from './app';
+export { app, startMode, openMenu, retryRun, startDaily } from './app';
 export { run } from './run';
 export { trackLength } from './track';
 export { MODES } from './modes';
@@ -142,6 +140,8 @@ export { laneButtonFlash } from './controls';
 export { debugPointerCount } from './input';
 export { feelState } from './feel';
 export { activeParticles } from './render/particles';
+export { dailyPlan, dailyStage, todayKey } from './daily';
+export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';
 export { totalStars, starsFor, modeUnlocked, modeUnlockCost, difficultyUnlocked, setUnlockOverride } from './progress';

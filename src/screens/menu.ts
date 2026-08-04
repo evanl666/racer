@@ -1,6 +1,7 @@
 /** Mode select: progress header, difficulty pills, and one card per mode. */
 
-import { app, startMode } from '../app';
+import { app, startDaily, startMode } from '../app';
+import { dailyPlan } from '../daily';
 import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
 import { MODES, ORIGINAL_MODE_IDS } from '../modes';
 import { trackById } from '../tracks';
@@ -23,9 +24,11 @@ import { UI } from '../theme';
 const MARGIN = 14;
 const PILL_Y = 78;
 const PILL_H = 34;
-const LIST_TOP = 148;
-const ROW_H = 38;
-const ROW_GAP = 3;
+const DAILY_Y = 142;
+const DAILY_H = 44;
+const LIST_TOP = 196;
+const ROW_H = 36;
+const ROW_GAP = 2;
 
 /** Transient message shown when a locked row is tapped. */
 const toast = { text: '', timer: 0 };
@@ -39,6 +42,8 @@ function pillRect(index: number): Rect {
   const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
   return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
 }
+
+const DAILY_RECT: Rect = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
 
 function rowRect(index: number): Rect {
   return {
@@ -90,11 +95,15 @@ export function drawMenu(): void {
 
     ctx.textAlign = 'center';
     if (!unlocked) {
-      drawLock(rect.x + rect.w / 2 - 16, rect.y + rect.h / 2, 9, 'rgba(255,246,228,0.5)');
-      ctx.fillStyle = 'rgba(255,246,228,0.5)';
+      const cost = String(difficultyUnlockCost(difficulty));
       ctx.font = '900 11px sans-serif';
-      ctx.fillText(`${difficultyUnlockCost(difficulty)}`, rect.x + rect.w / 2 + 10, rect.y + rect.h / 2 + 4);
-      drawStar(rect.x + rect.w / 2 - 1, rect.y + rect.h / 2 - 1, 5, 'rgba(255,246,228,0.5)', true);
+      const width = ctx.measureText(cost).width;
+      const centre = rect.x + rect.w / 2;
+      drawLock(centre - width / 2 - 16, rect.y + rect.h / 2, 9, 'rgba(255,246,228,0.5)');
+      drawStar(centre - width / 2 - 2, rect.y + rect.h / 2 - 1, 5, 'rgba(255,246,228,0.5)', true);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,246,228,0.5)';
+      ctx.fillText(cost, centre - width / 2 + 6, rect.y + rect.h / 2 + 4);
     } else {
       ctx.fillStyle = selected ? UI.ink : UI.card;
       ctx.font = '900 13px sans-serif';
@@ -106,6 +115,8 @@ export function drawMenu(): void {
   ctx.fillStyle = 'rgba(255,246,228,0.72)';
   ctx.font = '600 11px sans-serif';
   ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
+
+  drawDailyCard();
 
   MODES.forEach((mode, index) => {
     drawModeRow(mode.id, index, stars);
@@ -130,6 +141,34 @@ export function drawMenu(): void {
   ctx.textAlign = 'center';
 }
 
+/**
+ * The daily challenge sits above the ladder and ignores it: it is the one thing
+ * every player has in common on a given day, so gating it would defeat it.
+ */
+function drawDailyCard(): void {
+  const plan = dailyPlan();
+  const mode = MODES.find((entry) => entry.id === plan.modeId);
+  panel(DAILY_RECT, { fill: UI.primary, radius: 13, lift: 4 });
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = UI.ink;
+  ctx.font = '900 14px sans-serif';
+  ctx.fillText('每日挑战', DAILY_RECT.x + 14, DAILY_RECT.y + 20);
+
+  ctx.font = '600 9.5px sans-serif';
+  ctx.fillStyle = 'rgba(34,50,63,0.7)';
+  ctx.fillText(
+    `${plan.day} · ${mode ? mode.name : ''} · 两关 · 全服同一份车流`,
+    DAILY_RECT.x + 14,
+    DAILY_RECT.y + 35
+  );
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = UI.ink;
+  ctx.font = '900 12px sans-serif';
+  ctx.fillText('开始 ▸', DAILY_RECT.x + DAILY_RECT.w - 14, DAILY_RECT.y + 27);
+}
+
 function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars: number): void {
   const mode = MODES[index];
   const rect = rowRect(index);
@@ -151,11 +190,14 @@ function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars:
     ctx.font = '900 12px sans-serif';
     ctx.fillText(mode.name, rect.x + 40, rect.y + 24);
 
+    // Place the star from the measured width, or a two-digit cost overlaps it.
+    const costText = String(modeUnlockCost(modeId));
     ctx.textAlign = 'right';
     ctx.fillStyle = UI.primary;
     ctx.font = '900 13px sans-serif';
-    ctx.fillText(`${modeUnlockCost(modeId)}`, rect.x + rect.w - 14, rect.y + 25);
-    drawStar(rect.x + rect.w - 30, rect.y + rect.h / 2 - 1, 6, UI.primary, true);
+    ctx.fillText(costText, rect.x + rect.w - 14, rect.y + 24);
+    const costWidth = ctx.measureText(costText).width;
+    drawStar(rect.x + rect.w - 22 - costWidth, rect.y + rect.h / 2 - 1, 6, UI.primary, true);
     return;
   }
 
@@ -170,12 +212,12 @@ function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars:
   ctx.fillText(fromOriginal ? 'PJ' : 'NEW', rect.x + 17 + nameWidth, rect.y + 12);
 
   ctx.fillStyle = UI.inkSoft;
-  ctx.font = '500 9.5px sans-serif';
-  ctx.fillText(mode.rule, rect.x + 12, rect.y + 30);
+  ctx.font = '500 9px sans-serif';
+  ctx.fillText(mode.rule, rect.x + 12, rect.y + 29);
 
-  ctx.fillStyle = 'rgba(34,50,63,0.34)';
-  ctx.font = '700 7.5px sans-serif';
-  ctx.fillText(trackById(mode.trackId).name, rect.x + 12, rect.y + 39.5);
+  ctx.fillStyle = 'rgba(34,50,63,0.3)';
+  ctx.font = '700 7px sans-serif';
+  ctx.fillText(trackById(mode.trackId).name, rect.x + rect.w - 118, rect.y + 29);
 
   // Three stars for the selected difficulty, then the score that earned them.
   const earned = starsFor(modeId, app.difficulty);
@@ -199,6 +241,11 @@ function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars:
 /** Returns true when the tap was consumed. */
 export function handleMenuTap(x: number, y: number): boolean {
   const stars = totalStars();
+
+  if (hits(DAILY_RECT, x, y)) {
+    startDaily();
+    return true;
+  }
 
   for (let i = 0; i < DIFFICULTIES.length; i++) {
     if (!hits(pillRect(i), x, y)) continue;

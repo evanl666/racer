@@ -5,6 +5,7 @@ import { resetEffects } from './effects';
 import { MODES, modeById } from './modes';
 import type { Difficulty, ModeDefinition, ModeId, RunState } from './modes/types';
 import { aiCars, player, resetGame } from './state';
+import { setTrack } from './track';
 
 export const run: RunState = {
   modeId: MODES[0].id,
@@ -25,8 +26,9 @@ export let activeMode: ModeDefinition = MODES[0];
 export function startRun(modeId: ModeId, difficulty: Difficulty): void {
   activeMode = modeById(modeId);
 
-  // Tuning must be applied before resetGame so the AI cars are built at the
-  // right speeds for this difficulty.
+  // Order matters: the circuit defines the lap length that car placement uses,
+  // and tuning defines the speeds they are built with.
+  setTrack(activeMode.trackId);
   applyTuning(difficulty, activeMode.trafficScale);
   resetGame();
   resetEffects();

@@ -19,6 +19,7 @@ export const fireballFrenzy: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'POINTS',
   trafficScale: 1,
+  trackId: 'long-bay',
   stars: [400, 1200, 2600],
 
   setup() {

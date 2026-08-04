@@ -18,6 +18,7 @@ export const rushHour: ModeDefinition = {
   timeLimit: 75,
   scoreUnit: 'PASSES',
   trafficScale: 0.8,
+  trackId: 'grand-oval',
   stars: [18, 33, 50],
 
   setup(_run, cars) {

@@ -132,6 +132,23 @@ check('Normal is no longer the old 18-car field', counts.normal >= 24, `cars=${c
 check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 6));
 game.app.difficulty = 'normal';
 
+// Circuits: every mode names a real one, and they are not all the same.
+const trackIds = new Set(game.MODES.map((mode) => mode.trackId));
+check('four circuits are in rotation', trackIds.size === 4, [...trackIds].join(', '));
+check('every mode names a known circuit',
+  game.MODES.every((mode) => typeof mode.trackId === 'string' && mode.trackId.length > 0));
+
+// Switching modes actually swaps the geometry, so lap length changes.
+game.startMode('speed-monkey');
+const longBayLap = game.trackLength();
+game.startMode('sunday-drivers');
+const ovalLap = game.trackLength();
+check('circuits have different lap lengths', Math.abs(longBayLap - ovalLap) > 100,
+  `${longBayLap.toFixed(0)} vs ${ovalLap.toFixed(0)}`);
+check('cars are placed on the loaded circuit',
+  game.aiCars.every((car) => car.distance >= 0 && car.distance <= ovalLap),
+  `lap=${ovalLap.toFixed(0)}`);
+
 // Hot Rods heats the engine while the throttle is held.
 game.startMode('hot-rods');
 fire('start', [THROTTLE]);

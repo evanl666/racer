@@ -18,6 +18,7 @@ export const endurance: ModeDefinition = {
   timeLimit: Infinity,
   scoreUnit: 'PASSES',
   trafficScale: 0.75,
+  trackId: 'long-bay',
   stars: [15, 35, 62],
 
   setup(_run, cars) {

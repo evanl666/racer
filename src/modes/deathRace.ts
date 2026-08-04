@@ -13,6 +13,7 @@ export const deathRace: ModeDefinition = {
   timeLimit: 90,
   scoreUnit: 'POINTS',
   trafficScale: 0.85,
+  trackId: 'marina-sprint',
   stars: [800, 2000, 3600],
 
   setup() {

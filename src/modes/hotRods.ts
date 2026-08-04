@@ -17,6 +17,7 @@ export const hotRods: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'METRES',
   trafficScale: 1,
+  trackId: 'switchback',
   stars: [4000, 8200, 12500],
 
   setup() {

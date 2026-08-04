@@ -3,6 +3,7 @@
 import { app, startMode } from '../app';
 import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
 import { MODES, ORIGINAL_MODE_IDS } from '../modes';
+import { trackById } from '../tracks';
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import {
   difficultyUnlockCost,
@@ -171,6 +172,10 @@ function drawModeRow(modeId: (typeof MODES)[number]['id'], index: number, stars:
   ctx.fillStyle = UI.inkSoft;
   ctx.font = '500 9.5px sans-serif';
   ctx.fillText(mode.rule, rect.x + 12, rect.y + 30);
+
+  ctx.fillStyle = 'rgba(34,50,63,0.34)';
+  ctx.font = '700 7.5px sans-serif';
+  ctx.fillText(trackById(mode.trackId).name, rect.x + 12, rect.y + 39.5);
 
   // Three stars for the selected difficulty, then the score that earned them.
   const earned = starsFor(modeId, app.difficulty);

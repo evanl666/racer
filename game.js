@@ -40,6 +40,7 @@ var HarborLoop = (() => {
   var main_exports = {};
   __export(main_exports, {
     MODES: () => MODES,
+    TRACKS: () => TRACKS,
     aiCars: () => aiCars,
     app: () => app,
     bestScore: () => bestScore,
@@ -57,7 +58,8 @@ var HarborLoop = (() => {
     setUnlockOverride: () => setUnlockOverride,
     starsFor: () => starsFor,
     startMode: () => startMode,
-    totalStars: () => totalStars
+    totalStars: () => totalStars,
+    trackLength: () => trackLength
   });
 
   // src/config.ts
@@ -151,58 +153,171 @@ var HarborLoop = (() => {
     tuning.traffic = profile.trafficSpeed * trafficScale;
   }
 
-  // src/track.ts
-  function buildLongBayCircuit() {
-    const points = [];
-    function pushPoint(x, y) {
-      const last = points[points.length - 1];
-      if (!last || Math.hypot(last.x - x, last.y - y) > 0.01) points.push({ x, y });
+  // src/tracks/index.ts
+  var PathBuilder = class {
+    constructor() {
+      this.points = [];
     }
-    function lineTo(x, y, spacing = 3) {
-      const start = points[points.length - 1];
-      const length = Math.hypot(x - start.x, y - start.y);
+    push(x, y) {
+      const last = this.points[this.points.length - 1];
+      if (!last || Math.hypot(last.x - x, last.y - y) > 0.01) this.points.push({ x, y });
+    }
+    start(x, y) {
+      this.push(x, y);
+      return this;
+    }
+    lineTo(x, y, spacing = 3) {
+      const from = this.points[this.points.length - 1];
+      const length = Math.hypot(x - from.x, y - from.y);
       const count = Math.max(1, Math.ceil(length / spacing));
       for (let i = 1; i <= count; i++) {
         const t = i / count;
-        pushPoint(start.x + (x - start.x) * t, start.y + (y - start.y) * t);
+        this.push(from.x + (x - from.x) * t, from.y + (y - from.y) * t);
       }
+      return this;
     }
-    function arcTo(cx, cy, radius, startAngle, endAngle, spacing = 2.6) {
+    arcTo(cx, cy, radius, startAngle, endAngle, spacing = 2.6) {
       const sweep = endAngle - startAngle;
-      const length = Math.abs(sweep) * radius;
-      const count = Math.max(8, Math.ceil(length / spacing));
+      const count = Math.max(8, Math.ceil(Math.abs(sweep) * radius / spacing));
       for (let i = 1; i <= count; i++) {
-        const t = i / count;
-        const angle = startAngle + sweep * t;
-        pushPoint(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
+        const angle = startAngle + sweep * (i / count);
+        this.push(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
       }
+      return this;
     }
-    pushPoint(110, 70);
-    lineTo(310, 70);
-    arcTo(310, 115, 45, -Math.PI / 2, Math.PI / 2);
-    lineTo(160, 160);
-    arcTo(160, 205, 45, -Math.PI / 2, -3 * Math.PI / 2);
-    lineTo(310, 250);
-    arcTo(310, 295, 45, -Math.PI / 2, Math.PI / 2);
-    lineTo(160, 340);
-    arcTo(160, 385, 45, -Math.PI / 2, -3 * Math.PI / 2);
-    lineTo(310, 430);
-    arcTo(310, 475, 45, -Math.PI / 2, Math.PI / 2);
-    lineTo(160, 520);
-    arcTo(160, 565, 45, -Math.PI / 2, -3 * Math.PI / 2);
-    lineTo(310, 610);
-    arcTo(310, 655, 45, -Math.PI / 2, Math.PI / 2);
-    lineTo(110, 700);
-    arcTo(110, 640, 60, Math.PI / 2, Math.PI);
-    lineTo(50, 130);
-    arcTo(110, 130, 60, Math.PI, 3 * Math.PI / 2);
-    if (points.length > 1 && Math.hypot(
-      points[points.length - 1].x - points[0].x,
-      points[points.length - 1].y - points[0].y
-    ) < 0.1) points.pop();
-    return points;
+    /** Drops the duplicated closing point so the loop wraps cleanly. */
+    close() {
+      const { points } = this;
+      if (points.length > 1) {
+        const first = points[0];
+        const last = points[points.length - 1];
+        if (Math.hypot(last.x - first.x, last.y - first.y) < 0.1) points.pop();
+      }
+      return points;
+    }
+  };
+  function buildLongBay() {
+    const path = new PathBuilder().start(110, 70);
+    path.lineTo(310, 70);
+    path.arcTo(310, 115, 45, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(160, 160);
+    path.arcTo(160, 205, 45, -Math.PI / 2, -3 * Math.PI / 2);
+    path.lineTo(310, 250);
+    path.arcTo(310, 295, 45, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(160, 340);
+    path.arcTo(160, 385, 45, -Math.PI / 2, -3 * Math.PI / 2);
+    path.lineTo(310, 430);
+    path.arcTo(310, 475, 45, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(160, 520);
+    path.arcTo(160, 565, 45, -Math.PI / 2, -3 * Math.PI / 2);
+    path.lineTo(310, 610);
+    path.arcTo(310, 655, 45, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(110, 700);
+    path.arcTo(110, 640, 60, Math.PI / 2, Math.PI);
+    path.lineTo(50, 130);
+    path.arcTo(110, 130, 60, Math.PI, 3 * Math.PI / 2);
+    return path.close();
   }
-  var centerPath = buildLongBayCircuit();
+  function buildGrandOval() {
+    const left = 112;
+    const right = 278;
+    const top = 178;
+    const bottom = 612;
+    const radius = (right - left) / 2;
+    const midX = (left + right) / 2;
+    const path = new PathBuilder().start(left, bottom);
+    path.lineTo(left, top);
+    path.arcTo(midX, top, radius, Math.PI, Math.PI * 2);
+    path.lineTo(right, bottom);
+    path.arcTo(midX, bottom, radius, 0, Math.PI);
+    return path.close();
+  }
+  function buildSwitchback() {
+    const path = new PathBuilder().start(140, 92);
+    const radius = 30;
+    const leftX = 140;
+    const rightX = 296;
+    const rows = 9;
+    const step = 60;
+    for (let row = 0; row < rows; row++) {
+      const y = 92 + row * step;
+      const goingRight = row % 2 === 0;
+      path.lineTo(goingRight ? rightX : leftX, y);
+      if (row === rows - 1) break;
+      const cx = goingRight ? rightX : leftX;
+      const cy = y + radius;
+      if (goingRight) path.arcTo(cx, cy, radius, -Math.PI / 2, Math.PI / 2);
+      else path.arcTo(cx, cy, radius, -Math.PI / 2, -3 * Math.PI / 2);
+    }
+    path.arcTo(rightX, 611, 39, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(88, 650);
+    path.arcTo(88, 598, 52, Math.PI / 2, Math.PI);
+    path.lineTo(36, 144);
+    path.arcTo(88, 144, 52, Math.PI, 3 * Math.PI / 2);
+    path.lineTo(leftX, 92);
+    return path.close();
+  }
+  function buildMarinaSprint() {
+    const path = new PathBuilder().start(128, 110);
+    path.lineTo(288, 110);
+    path.arcTo(288, 168, 58, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(168, 226);
+    path.arcTo(168, 284, 58, -Math.PI / 2, -3 * Math.PI / 2);
+    path.lineTo(288, 342);
+    path.arcTo(288, 400, 58, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(168, 458);
+    path.arcTo(168, 516, 58, -Math.PI / 2, -3 * Math.PI / 2);
+    path.lineTo(288, 574);
+    path.arcTo(288, 632, 58, -Math.PI / 2, Math.PI / 2);
+    path.lineTo(128, 690);
+    path.arcTo(128, 632, 58, Math.PI / 2, Math.PI);
+    path.lineTo(70, 168);
+    path.arcTo(128, 168, 58, Math.PI, 3 * Math.PI / 2);
+    return path.close();
+  }
+  var LONG_BAY_DECOR = {
+    medians: [
+      [178, 111, 113, 16],
+      [178, 201, 113, 16],
+      [178, 291, 113, 16],
+      [178, 381, 113, 16],
+      [178, 471, 113, 16],
+      [178, 561, 113, 16],
+      [178, 651, 113, 16]
+    ],
+    trees: [[194, 119, 0.4], [265, 209, 0.38], [205, 299, 0.4], [204, 479, 0.4], [265, 569, 0.38]],
+    umbrellas: [[242, 119, 0.38], [252, 389, 0.38], [220, 659, 0.38]],
+    buoys: [[26, 128], [365, 250], [25, 628], [366, 650]]
+  };
+  var GRAND_OVAL_DECOR = {
+    medians: [[170, 216, 50, 356]],
+    trees: [[195, 252, 0.42], [195, 400, 0.42], [195, 540, 0.42]],
+    umbrellas: [[195, 326, 0.4], [195, 468, 0.4]],
+    buoys: [[40, 150], [352, 210], [40, 640], [352, 620]]
+  };
+  var OPEN_WATER_DECOR = {
+    medians: [],
+    trees: [],
+    umbrellas: [],
+    buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]]
+  };
+  var TRACKS = [
+    { id: "long-bay", name: "LONG BAY", build: buildLongBay, decor: LONG_BAY_DECOR },
+    { id: "grand-oval", name: "GRAND OVAL", build: buildGrandOval, decor: GRAND_OVAL_DECOR },
+    { id: "switchback", name: "SWITCHBACK", build: buildSwitchback, decor: OPEN_WATER_DECOR },
+    { id: "marina-sprint", name: "MARINA SPRINT", build: buildMarinaSprint, decor: OPEN_WATER_DECOR }
+  ];
+  var BY_ID = new Map(TRACKS.map((track) => [track.id, track]));
+  function trackById(id) {
+    const track = BY_ID.get(id);
+    if (!track) throw new Error(`unknown track: ${id}`);
+    return track;
+  }
+  var DEFAULT_TRACK_ID = "long-bay";
+
+  // src/track.ts
+  var activeTrackId = DEFAULT_TRACK_ID;
+  var centerPath = [];
   function buildArcData(points) {
     const cumulative = [0];
     let total = 0;
@@ -214,7 +329,10 @@ var HarborLoop = (() => {
     }
     return { cumulative, total };
   }
-  var arc = buildArcData(centerPath);
+  var arc = { cumulative: [0], total: 1 };
+  function trackLength() {
+    return arc.total;
+  }
   function wrapDistance(distance) {
     return (distance % arc.total + arc.total) % arc.total;
   }
@@ -259,7 +377,7 @@ var HarborLoop = (() => {
     const laneOffset = (laneIndex - (LANE_COUNT - 1) / 2) * LANE_GAP;
     return pathAtOffset(laneOffset);
   }
-  var laneCenterPaths = Array.from({ length: LANE_COUNT }, (_, lane) => pathForLane(lane));
+  var laneCenterPaths = [];
   function laneBounds(laneIndex) {
     const clamped = Math.max(0, Math.min(LANE_COUNT - 1, laneIndex));
     const lower = Math.floor(clamped);
@@ -317,9 +435,19 @@ var HarborLoop = (() => {
     }
     return currentDistance;
   }
-  var laneDividerPaths = Array.from({ length: LANE_COUNT - 1 }, (_, i) => pathForLane(i + 0.5));
-  var outerRoadEdgePath = pathAtOffset(ROAD_HALF_WIDTH - 1.8);
-  var innerRoadEdgePath = pathAtOffset(-ROAD_HALF_WIDTH + 1.8);
+  var laneDividerPaths = [];
+  var outerRoadEdgePath = [];
+  var innerRoadEdgePath = [];
+  function setTrack(id) {
+    activeTrackId = id;
+    centerPath = trackById(id).build();
+    arc = buildArcData(centerPath);
+    laneCenterPaths = Array.from({ length: LANE_COUNT }, (_, lane) => pathForLane(lane));
+    laneDividerPaths = Array.from({ length: LANE_COUNT - 1 }, (_, i) => pathForLane(i + 0.5));
+    outerRoadEdgePath = pathAtOffset(ROAD_HALF_WIDTH - 1.8);
+    innerRoadEdgePath = pathAtOffset(-ROAD_HALF_WIDTH + 1.8);
+  }
+  setTrack(DEFAULT_TRACK_ID);
 
   // src/state.ts
   var STARTING_LANE = 2;
@@ -609,6 +737,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 0.9,
+    trackId: "switchback",
     stars: [15, 28, 43],
     setup() {
       effects.dim = 0;
@@ -639,6 +768,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "CHAIN",
     trafficScale: 0.9,
+    trackId: "long-bay",
     stars: [3, 6, 10],
     setup() {
       chain = 0;
@@ -683,6 +813,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "COMBO",
     trafficScale: 1,
+    trackId: "long-bay",
     stars: [12, 26, 40],
     update(_dt, run2) {
       if (player.combo > run2.score) run2.score = player.combo;
@@ -705,6 +836,7 @@ var HarborLoop = (() => {
     timeLimit: 90,
     scoreUnit: "POINTS",
     trafficScale: 0.85,
+    trackId: "marina-sprint",
     stars: [800, 2e3, 3600],
     setup() {
       player.fireball = Number.POSITIVE_INFINITY;
@@ -733,6 +865,7 @@ var HarborLoop = (() => {
     timeLimit: Infinity,
     scoreUnit: "PASSES",
     trafficScale: 0.75,
+    trackId: "long-bay",
     stars: [15, 35, 62],
     setup(_run, cars) {
       baseline = cars.map((car) => car.baseSpeed);
@@ -762,6 +895,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 1,
+    trackId: "long-bay",
     stars: [400, 1200, 2600],
     setup() {
       lastCharge = 0;
@@ -1236,6 +1370,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 1,
+    trackId: "marina-sprint",
     stars: [10, 20, 33],
     setup() {
       timer = SWITCH_SECONDS;
@@ -1274,6 +1409,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "METRES",
     trafficScale: 1,
+    trackId: "switchback",
     stars: [4e3, 8200, 12500],
     setup() {
       player.heat = 0;
@@ -1310,6 +1446,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "POINTS",
     trafficScale: 0.9,
+    trackId: "switchback",
     stars: [1e3, 2100, 3300],
     setup(_run, cars) {
       const stride = Math.max(1, Math.floor(cars.length / ZONE_COUNT));
@@ -1364,6 +1501,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "PASSES",
     trafficScale: 0.95,
+    trackId: "marina-sprint",
     stars: [12, 24, 38],
     setup() {
       timer2 = CULL_INTERVAL;
@@ -1404,6 +1542,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 0.85,
+    trackId: "grand-oval",
     stars: [1200, 2600, 4100],
     setup() {
       inBandSeconds = 0;
@@ -1428,6 +1567,7 @@ var HarborLoop = (() => {
     timeLimit: 75,
     scoreUnit: "PASSES",
     trafficScale: 0.8,
+    trackId: "grand-oval",
     stars: [18, 33, 50],
     setup(_run, cars) {
       baseline2 = cars.map((car) => car.baseSpeed);
@@ -1455,6 +1595,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "POINTS",
     trafficScale: 0.95,
+    trackId: "switchback",
     stars: [1400, 3e3, 5e3],
     setup() {
       charge = 0;
@@ -1496,6 +1637,7 @@ var HarborLoop = (() => {
     timeLimit: Infinity,
     scoreUnit: "COMBO",
     trafficScale: 1,
+    trackId: "long-bay",
     stars: [10, 26, 48],
     update(_dt, run2) {
       run2.progress = -1;
@@ -1514,6 +1656,7 @@ var HarborLoop = (() => {
     timeLimit: 60,
     scoreUnit: "PASSES",
     trafficScale: 0.42,
+    trackId: "grand-oval",
     stars: [30, 55, 82],
     update(_dt, run2) {
       run2.score = player.totalPasses;
@@ -1535,6 +1678,7 @@ var HarborLoop = (() => {
     timeLimit: 180,
     scoreUnit: "SECONDS",
     trafficScale: 0.9,
+    trackId: "grand-oval",
     stars: [95, 80, 68],
     lowerIsBetter: true,
     setup() {
@@ -1578,9 +1722,9 @@ var HarborLoop = (() => {
     "in-the-zone",
     "hot-rods"
   ]);
-  var BY_ID = new Map(MODES.map((mode) => [mode.id, mode]));
+  var BY_ID2 = new Map(MODES.map((mode) => [mode.id, mode]));
   function modeById(id) {
-    const mode = BY_ID.get(id);
+    const mode = BY_ID2.get(id);
     if (!mode) throw new Error(`unknown mode: ${id}`);
     return mode;
   }
@@ -1754,6 +1898,7 @@ var HarborLoop = (() => {
   function startRun(modeId, difficulty) {
     var _a;
     activeMode = modeById(modeId);
+    setTrack(activeMode.trackId);
     applyTuning(difficulty, activeMode.trafficScale);
     resetGame();
     resetEffects();
@@ -2315,6 +2460,9 @@ var HarborLoop = (() => {
     ctx.fillStyle = UI.inkSoft;
     ctx.font = "500 9.5px sans-serif";
     ctx.fillText(mode.rule, rect.x + 12, rect.y + 30);
+    ctx.fillStyle = "rgba(34,50,63,0.34)";
+    ctx.font = "700 7.5px sans-serif";
+    ctx.fillText(trackById(mode.trackId).name, rect.x + 12, rect.y + 39.5);
     const earned = starsFor(modeId, app.difficulty);
     for (let i = 0; i < 3; i++) {
       drawStar(rect.x + rect.w - 66 + i * 15, rect.y + 14, 6, i < earned ? UI.primary : "rgba(34,50,63,0.18)", i < earned);
@@ -2791,34 +2939,18 @@ var HarborLoop = (() => {
       }
       ctx.stroke();
     }
-    const medians = [
-      [178, 111, 113, 16],
-      [178, 201, 113, 16],
-      [178, 291, 113, 16],
-      [178, 381, 113, 16],
-      [178, 471, 113, 16],
-      [178, 561, 113, 16],
-      [178, 651, 113, 16]
-    ];
-    for (let i = 0; i < medians.length; i++) {
-      const [x, y, w, h] = medians[i];
+    const decor = trackById(activeTrackId).decor;
+    decor.medians.forEach(([x, y, w, h], i) => {
       ctx.fillStyle = COLORS.landDark;
       roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 12);
       ctx.fill();
       ctx.fillStyle = i % 2 === 0 ? COLORS.land : COLORS.landLight;
       roundRect(ctx, x, y, w, h, 9);
       ctx.fill();
-    }
-    drawTree(194, 119, 0.4);
-    drawUmbrella(242, 119, 0.38);
-    drawTree(265, 209, 0.38);
-    drawTree(205, 299, 0.4);
-    drawUmbrella(252, 389, 0.38);
-    drawTree(204, 479, 0.4);
-    drawTree(265, 569, 0.38);
-    drawUmbrella(220, 659, 0.38);
-    const buoys = [[26, 128], [365, 250], [25, 628], [366, 650]];
-    for (const [x, y] of buoys) {
+    });
+    for (const [x, y, size] of decor.trees) drawTree(x, y, size);
+    for (const [x, y, size] of decor.umbrellas) drawUmbrella(x, y, size);
+    for (const [x, y] of decor.buoys) {
       ctx.fillStyle = "rgba(240,231,204,0.75)";
       ctx.beginPath();
       ctx.arc(x, y, 2.2, 0, Math.PI * 2);

@@ -1,5 +1,6 @@
 /** The contract every race mode implements. */
 
+import type { TrackId } from '../tracks';
 import type { AiCar } from '../types';
 
 export type ModeId =
@@ -58,6 +59,8 @@ export interface ModeDefinition {
   scoreUnit: string;
   /** Traffic speed multiplier applied on top of the difficulty scale. */
   trafficScale: number;
+  /** Which circuit this mode is raced on. */
+  trackId: TrackId;
   /**
    * Score needed for one, two and three stars, in this mode's own unit.
    * Stars are the game's single progression currency: they gate every mode and

@@ -1,78 +1,20 @@
 /**
- * Long Bay Circuit geometry: an original folded circuit built from exact lines and
- * arcs. Six long straights and five broad hairpins produce a route that is
- * substantially longer than V0.7.x while remaining smooth, non-crossing and easy
- * to read.
+ * Track geometry for whichever circuit is loaded.
  *
- * Everything here is pure geometry — no game state, no drawing.
+ * The shapes themselves live in tracks/; this module turns the active one into
+ * everything the game needs: cumulative arc length, per-lane paths, and the
+ * sampling used to place cars. setTrack() rebuilds all of it, so every export
+ * here is a live binding that changes when the circuit does.
+ *
+ * Pure geometry — no game state, no drawing.
  */
 
 import { LANE_COUNT, LANE_GAP, ROAD_HALF_WIDTH } from './config';
+import { DEFAULT_TRACK_ID, trackById, type TrackId } from './tracks';
 import type { TrackSample, Vec2 } from './types';
 
-function buildLongBayCircuit(): Vec2[] {
-  const points: Vec2[] = [];
-
-  function pushPoint(x: number, y: number): void {
-    const last = points[points.length - 1];
-    if (!last || Math.hypot(last.x - x, last.y - y) > 0.01) points.push({ x, y });
-  }
-
-  function lineTo(x: number, y: number, spacing = 3.0): void {
-    const start = points[points.length - 1];
-    const length = Math.hypot(x - start.x, y - start.y);
-    const count = Math.max(1, Math.ceil(length / spacing));
-    for (let i = 1; i <= count; i++) {
-      const t = i / count;
-      pushPoint(start.x + (x - start.x) * t, start.y + (y - start.y) * t);
-    }
-  }
-
-  function arcTo(cx: number, cy: number, radius: number, startAngle: number, endAngle: number, spacing = 2.6): void {
-    const sweep = endAngle - startAngle;
-    const length = Math.abs(sweep) * radius;
-    const count = Math.max(8, Math.ceil(length / spacing));
-    for (let i = 1; i <= count; i++) {
-      const t = i / count;
-      const angle = startAngle + sweep * t;
-      pushPoint(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
-    }
-  }
-
-  // Eight long horizontal runs use nearly the full portrait screen. The alternating
-  // broad hairpins keep the route readable and smooth without any crossings.
-  pushPoint(110, 70);
-  lineTo(310, 70);
-  arcTo(310, 115, 45, -Math.PI / 2, Math.PI / 2);
-  lineTo(160, 160);
-  arcTo(160, 205, 45, -Math.PI / 2, -3 * Math.PI / 2);
-  lineTo(310, 250);
-  arcTo(310, 295, 45, -Math.PI / 2, Math.PI / 2);
-  lineTo(160, 340);
-  arcTo(160, 385, 45, -Math.PI / 2, -3 * Math.PI / 2);
-  lineTo(310, 430);
-  arcTo(310, 475, 45, -Math.PI / 2, Math.PI / 2);
-  lineTo(160, 520);
-  arcTo(160, 565, 45, -Math.PI / 2, -3 * Math.PI / 2);
-  lineTo(310, 610);
-  arcTo(310, 655, 45, -Math.PI / 2, Math.PI / 2);
-  lineTo(110, 700);
-
-  // Outer return line closes the folded circuit while staying separated from the
-  // inner hairpins by a narrow water channel.
-  arcTo(110, 640, 60, Math.PI / 2, Math.PI);
-  lineTo(50, 130);
-  arcTo(110, 130, 60, Math.PI, 3 * Math.PI / 2);
-
-  if (points.length > 1 && Math.hypot(
-    points[points.length - 1].x - points[0].x,
-    points[points.length - 1].y - points[0].y
-  ) < 0.1) points.pop();
-
-  return points;
-}
-
-export const centerPath = buildLongBayCircuit();
+export let activeTrackId: TrackId = DEFAULT_TRACK_ID;
+export let centerPath: Vec2[] = [];
 
 interface ArcData {
   cumulative: number[];
@@ -91,7 +33,12 @@ function buildArcData(points: Vec2[]): ArcData {
   return { cumulative, total };
 }
 
-export const arc = buildArcData(centerPath);
+export let arc: ArcData = { cumulative: [0], total: 1 };
+
+/** Lap length of the loaded circuit, in road units. */
+export function trackLength(): number {
+  return arc.total;
+}
 
 export function wrapDistance(distance: number): number {
   return ((distance % arc.total) + arc.total) % arc.total;
@@ -154,7 +101,7 @@ export function pathForLane(laneIndex: number): Vec2[] {
 // center-line station for collision/overtake logic, but movement consumes actual
 // road distance segment-by-segment on the current (possibly fractional) lane.
 // This avoids both outer-lane and inner-lane speed spikes at straight/curve joins.
-const laneCenterPaths = Array.from({ length: LANE_COUNT }, (_, lane) => pathForLane(lane));
+let laneCenterPaths: Vec2[][] = [];
 
 function laneBounds(laneIndex: number): { lower: number; upper: number; blend: number } {
   const clamped = Math.max(0, Math.min(LANE_COUNT - 1, laneIndex));
@@ -227,6 +174,25 @@ export function advanceDistanceAtRoadSpeed(distance: number, speed: number, dt: 
 }
 
 // Five separators create six actual lanes. Cars run between these lines.
-export const laneDividerPaths = Array.from({ length: LANE_COUNT - 1 }, (_, i) => pathForLane(i + 0.5));
-export const outerRoadEdgePath = pathAtOffset(ROAD_HALF_WIDTH - 1.8);
-export const innerRoadEdgePath = pathAtOffset(-ROAD_HALF_WIDTH + 1.8);
+export let laneDividerPaths: Vec2[][] = [];
+export let outerRoadEdgePath: Vec2[] = [];
+export let innerRoadEdgePath: Vec2[] = [];
+
+/**
+ * Loads a circuit and rebuilds every derived path. Call before resetGame(), which
+ * places cars using the new arc length.
+ */
+export function setTrack(id: TrackId): void {
+  activeTrackId = id;
+  centerPath = trackById(id).build();
+  arc = buildArcData(centerPath);
+
+  // Lane paths depend on centerPath, and everything else depends on those, so the
+  // rebuild order here matters.
+  laneCenterPaths = Array.from({ length: LANE_COUNT }, (_, lane) => pathForLane(lane));
+  laneDividerPaths = Array.from({ length: LANE_COUNT - 1 }, (_, i) => pathForLane(i + 0.5));
+  outerRoadEdgePath = pathAtOffset(ROAD_HALF_WIDTH - 1.8);
+  innerRoadEdgePath = pathAtOffset(-ROAD_HALF_WIDTH + 1.8);
+}
+
+setTrack(DEFAULT_TRACK_ID);

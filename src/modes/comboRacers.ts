@@ -15,6 +15,7 @@ export const comboRacers: ModeDefinition = {
   timeLimit: 60,
   scoreUnit: 'COMBO',
   trafficScale: 1,
+  trackId: 'long-bay',
   stars: [12, 26, 40],
 
   update(_dt, run) {

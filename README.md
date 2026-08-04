@@ -30,6 +30,19 @@
 | TIME ATTACK | 原创 | 跑完 3 圈，用时越短越好 |
 | ENDURANCE | 原创 | 无时间限制，一条命，车流永远在加速 |
 
+### 赛道
+
+四条赛道，每个模式绑定一条，所以换模式就换场地，不需要额外的选择界面：
+
+| 赛道 | 圈长 | 特点 | 使用的模式 |
+|---|---:|---|---|
+| LONG BAY | ~2990 | 8 段长直道 + 宽发夹，圈最长，适合堆 Combo | Speed Monkey、Combo Racers、Fireball Frenzy、Chain Reaction、Endurance |
+| GRAND OVAL | ~1390 | 体育场式，只有两个弯，全程高速无处躲 | Sunday Drivers、Rush Hour、Pace Setter、Time Attack |
+| SWITCHBACK | ~2100 | 9 段短直道 + 密集发夹，弯道不断，车道选择最关键 | In The Zone、Hot Rods、Slipstream、Blackout |
+| MARINA SPRINT | ~2200 | 中等圈长，宽弯，节奏快但有喘息空间 | Death Race、Ghost Lane、Last Man |
+
+赛道用精确的直线和圆弧构造，曲率连续；景观装饰按赛道分别定义，不会压在路面上。
+
 ### 难度
 
 难度不只是调速度，五个维度一起变：

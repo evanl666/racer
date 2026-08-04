@@ -31,24 +31,22 @@ export const AI_PLAYER_REAR_SAFETY_DISTANCE = 30;
 export const COLLISION_PATH_DISTANCE = 11.5;
 export const COLLISION_LANE_DISTANCE = 0.48;
 
-/** Eighteen black cars, spread across all six lanes and around the whole lap. */
-export const AI_BLUEPRINTS: AiBlueprint[] = [
-  { fraction: 0.07, lane: 0, speed: 84 },
-  { fraction: 0.39, lane: 0, speed: 88 },
-  { fraction: 0.72, lane: 0, speed: 86 },
-  { fraction: 0.16, lane: 1, speed: 92 },
-  { fraction: 0.50, lane: 1, speed: 96 },
-  { fraction: 0.84, lane: 1, speed: 94 },
-  { fraction: 0.25, lane: 2, speed: 98 },
-  { fraction: 0.59, lane: 2, speed: 103 },
-  { fraction: 0.92, lane: 2, speed: 100 },
-  { fraction: 0.10, lane: 3, speed: 104 },
-  { fraction: 0.44, lane: 3, speed: 109 },
-  { fraction: 0.77, lane: 3, speed: 106 },
-  { fraction: 0.20, lane: 4, speed: 110 },
-  { fraction: 0.54, lane: 4, speed: 114 },
-  { fraction: 0.88, lane: 4, speed: 112 },
-  { fraction: 0.31, lane: 5, speed: 116 },
-  { fraction: 0.64, lane: 5, speed: 120 },
-  { fraction: 0.97, lane: 5, speed: 118 }
-];
+/**
+ * Traffic is generated per run so the car count can be a difficulty knob.
+ *
+ * Lanes cycle so every lane stays occupied, speed rises with lane index (the
+ * outside lane is the slow lane), and the golden ratio spaces cars around the
+ * lap without clumping at any count.
+ */
+export function buildBlueprints(count: number): AiBlueprint[] {
+  const blueprints: AiBlueprint[] = [];
+  for (let i = 0; i < count; i++) {
+    const lane = i % LANE_COUNT;
+    blueprints.push({
+      fraction: (i * 0.6180339887498949) % 1,
+      lane,
+      speed: 84 + lane * 7 + (i % 3) * 3
+    });
+  }
+  return blueprints;
+}

@@ -71,7 +71,6 @@ var HarborLoop = (() => {
   var AI_CHANGE_DURATION = 0.2;
   var AI_MIN_DECISION_DELAY = 0.85;
   var AI_MAX_DECISION_DELAY = 2.35;
-  var MAX_SIMULTANEOUS_AI_ACTIONS = 2;
   var AI_LANE_CLEAR_DISTANCE = 32;
   var AI_PLAYER_BASE_SAFETY_DISTANCE = 50;
   var AI_PLAYER_MAX_SAFETY_DISTANCE = 265;
@@ -79,49 +78,71 @@ var HarborLoop = (() => {
   var AI_PLAYER_REAR_SAFETY_DISTANCE = 30;
   var COLLISION_PATH_DISTANCE = 11.5;
   var COLLISION_LANE_DISTANCE = 0.48;
-  var AI_BLUEPRINTS = [
-    { fraction: 0.07, lane: 0, speed: 84 },
-    { fraction: 0.39, lane: 0, speed: 88 },
-    { fraction: 0.72, lane: 0, speed: 86 },
-    { fraction: 0.16, lane: 1, speed: 92 },
-    { fraction: 0.5, lane: 1, speed: 96 },
-    { fraction: 0.84, lane: 1, speed: 94 },
-    { fraction: 0.25, lane: 2, speed: 98 },
-    { fraction: 0.59, lane: 2, speed: 103 },
-    { fraction: 0.92, lane: 2, speed: 100 },
-    { fraction: 0.1, lane: 3, speed: 104 },
-    { fraction: 0.44, lane: 3, speed: 109 },
-    { fraction: 0.77, lane: 3, speed: 106 },
-    { fraction: 0.2, lane: 4, speed: 110 },
-    { fraction: 0.54, lane: 4, speed: 114 },
-    { fraction: 0.88, lane: 4, speed: 112 },
-    { fraction: 0.31, lane: 5, speed: 116 },
-    { fraction: 0.64, lane: 5, speed: 120 },
-    { fraction: 0.97, lane: 5, speed: 118 }
-  ];
+  function buildBlueprints(count) {
+    const blueprints = [];
+    for (let i = 0; i < count; i++) {
+      const lane = i % LANE_COUNT;
+      blueprints.push({
+        fraction: i * 0.6180339887498949 % 1,
+        lane,
+        speed: 84 + lane * 7 + i % 3 * 3
+      });
+    }
+    return blueprints;
+  }
 
   // src/difficulty.ts
-  var DIFFICULTY_SCALE = {
-    normal: 1,
-    turbo: 1.25,
-    master: 1.5
+  var DIFFICULTY_PROFILES = {
+    normal: {
+      label: "NORMAL",
+      blurb: "24 车 · 基准速度 · AI 会让路",
+      playerSpeed: 1,
+      trafficSpeed: 1,
+      carCount: 24,
+      aiSafetyScale: 0.85,
+      aiDecisionScale: 0.85,
+      maxSimultaneousAi: 3,
+      invincibleSeconds: 1.25
+    },
+    turbo: {
+      label: "TURBO",
+      blurb: "30 车 · 更快 · AI 更早并线",
+      playerSpeed: 1.22,
+      trafficSpeed: 1.2,
+      carCount: 30,
+      aiSafetyScale: 0.58,
+      aiDecisionScale: 0.58,
+      maxSimultaneousAi: 4,
+      invincibleSeconds: 1
+    },
+    master: {
+      label: "MASTER",
+      blurb: "36 车 · 最快 · AI 几乎不让路",
+      playerSpeed: 1.45,
+      trafficSpeed: 1.42,
+      carCount: 36,
+      aiSafetyScale: 0.36,
+      aiDecisionScale: 0.4,
+      maxSimultaneousAi: 6,
+      invincibleSeconds: 0.75
+    }
   };
   var DIFFICULTY_LABEL = {
-    normal: "NORMAL",
-    turbo: "TURBO",
-    master: "MASTER"
+    normal: DIFFICULTY_PROFILES.normal.label,
+    turbo: DIFFICULTY_PROFILES.turbo.label,
+    master: DIFFICULTY_PROFILES.master.label
   };
   var DIFFICULTIES = ["normal", "turbo", "master"];
   var tuning = {
-    /** Multiplies every player speed target. */
+    profile: DIFFICULTY_PROFILES.normal,
     player: 1,
-    /** Multiplies every AI base speed. Mode traffic scaling is folded in here. */
     traffic: 1
   };
   function applyTuning(difficulty, trafficScale) {
-    const scale2 = DIFFICULTY_SCALE[difficulty];
-    tuning.player = scale2;
-    tuning.traffic = scale2 * trafficScale;
+    const profile = DIFFICULTY_PROFILES[difficulty];
+    tuning.profile = profile;
+    tuning.player = profile.playerSpeed;
+    tuning.traffic = profile.trafficSpeed * trafficScale;
   }
 
   // src/track.ts
@@ -346,7 +367,7 @@ var HarborLoop = (() => {
     player.fireball = 0;
     player.heat = 0;
     player.travelled = 0;
-    aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
+    aiCars = buildBlueprints(tuning.profile.carCount).map((blueprint, index) => {
       const distance = arc.total * blueprint.fraction;
       const baseSpeed = blueprint.speed * tuning.traffic;
       return {
@@ -363,7 +384,7 @@ var HarborLoop = (() => {
         state: "IDLE",
         stateElapsed: 0,
         direction: 0,
-        decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
+        decisionTimer: (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale,
         passIndex: Math.floor((player.distance - distance) / arc.total),
         alive: true,
         wreck: 0,
@@ -402,7 +423,8 @@ var HarborLoop = (() => {
   // src/ai.ts
   function currentAiPlayerSafetyDistance() {
     const speedExtra = Math.max(0, player.speed - baseCruiseSpeed()) * AI_PLAYER_SAFETY_PER_SPEED;
-    return Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
+    const zone = Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
+    return zone * tuning.profile.aiSafetyScale;
   }
   function playerIsApproachingAi(car) {
     const playerToCar = forwardPathDistance(player.distance, car.distance);
@@ -444,7 +466,7 @@ var HarborLoop = (() => {
     return Math.random() < 0.5 ? [-1, 1] : [1, -1];
   }
   function tryBeginAiLaneChange(car) {
-    if (countActiveAiLaneChanges() >= MAX_SIMULTANEOUS_AI_ACTIONS) return false;
+    if (countActiveAiLaneChanges() >= tuning.profile.maxSimultaneousAi) return false;
     if (playerIsApproachingAi(car)) return false;
     const ahead = nearestAiAhead(car, car.visualLane, 62);
     const needsToPass = Boolean(ahead && ahead.car.speed + 2 < car.baseSpeed && ahead.distance < 46);
@@ -473,7 +495,7 @@ var HarborLoop = (() => {
       car.previousVisualLane = car.visualLane;
       car.decisionTimer -= dt;
       if (car.state === "IDLE" && car.decisionTimer <= 0) {
-        car.decisionTimer = AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY);
+        car.decisionTimer = (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) * tuning.profile.aiDecisionScale;
         tryBeginAiLaneChange(car);
       } else if (car.state === "WARNING") {
         car.stateElapsed += dt;
@@ -1139,7 +1161,7 @@ var HarborLoop = (() => {
     player.state = "CRASHED";
     player.stateElapsed = 0;
     player.speed = 0;
-    player.invincible = 1.25;
+    player.invincible = tuning.profile.invincibleSeconds;
     player.combo = 0;
     player.tierBoostElapsed = 0;
     player.collisionCount += 1;
@@ -1688,7 +1710,7 @@ var HarborLoop = (() => {
   function finishRun() {
     const mode = modeById(run.modeId);
     const lowerIsBetter = Boolean(mode.lowerIsBetter);
-    const scoreCounts = !(lowerIsBetter && run.outcome !== "cleared");
+    const scoreCounts = run.score > 0 && !(lowerIsBetter && run.outcome !== "cleared");
     const newBest = scoreCounts && submitScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
     app.result = {
       modeId: run.modeId,
@@ -1765,6 +1787,21 @@ var HarborLoop = (() => {
     buttonActive: "rgba(87,213,203,0.30)",
     buttonDisabled: "rgba(8,17,25,0.42)",
     buttonEdge: "rgba(247,244,234,0.28)"
+  };
+  var UI = {
+    ground: "#12384E",
+    groundDeep: "#0A2233",
+    groundStripe: "rgba(255,255,255,0.028)",
+    card: "#FFF6E4",
+    cardAlt: "#FFEDCC",
+    ink: "#22323F",
+    inkSoft: "#6C7C88",
+    outline: "#152532",
+    primary: "#FFB43C",
+    primaryDeep: "#E38C15",
+    good: "#5FCF80",
+    bad: "#FF6B5E",
+    chip: "#1B3F55"
   };
 
   // src/render/primitives.ts
@@ -1936,99 +1973,178 @@ var HarborLoop = (() => {
     }
   }
 
+  // src/render/ui.ts
+  function hits(rect, x, y) {
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+  }
+  function panel(rect, style) {
+    var _a, _b, _c, _d;
+    const radius = (_a = style.radius) != null ? _a : 14;
+    const lift = (_b = style.lift) != null ? _b : 4;
+    const outline = (_c = style.outline) != null ? _c : UI.outline;
+    if (lift > 0) {
+      roundRect(ctx, rect.x, rect.y + lift, rect.w, rect.h, radius);
+      ctx.fillStyle = outline;
+      ctx.fill();
+    }
+    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, radius);
+    ctx.fillStyle = style.fill;
+    ctx.fill();
+    ctx.lineWidth = (_d = style.outlineWidth) != null ? _d : 2.5;
+    ctx.strokeStyle = outline;
+    ctx.stroke();
+  }
+  var VARIANT_FILL = {
+    primary: UI.primary,
+    good: UI.good,
+    plain: UI.card
+  };
+  function chunkyButton(rect, label, variant = "plain", size = 16) {
+    panel(rect, { fill: VARIANT_FILL[variant], radius: Math.min(18, rect.h / 2), lift: 5 });
+    ctx.textAlign = "center";
+    ctx.fillStyle = UI.ink;
+    ctx.font = `900 ${size}px sans-serif`;
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.36);
+  }
+  function chip(rect, label, fill, textColor, size = 11) {
+    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.h / 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.textAlign = "center";
+    ctx.fillStyle = textColor;
+    ctx.font = `900 ${size}px sans-serif`;
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + size * 0.36);
+  }
+  function headline(text, x, y, size, fill, align = "left") {
+    ctx.textAlign = align;
+    ctx.font = `900 ${size}px sans-serif`;
+    ctx.fillStyle = UI.outline;
+    ctx.fillText(text, x, y + 2.5);
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+  }
+  function screenBackground(width, height) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, UI.groundDeep);
+    gradient.addColorStop(1, UI.ground);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    ctx.save();
+    ctx.fillStyle = UI.groundStripe;
+    for (let i = -height; i < width + height; i += 44) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 18, 0);
+      ctx.lineTo(i + 18 + height, height);
+      ctx.lineTo(i + height, height);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // src/screens/menu.ts
-  var PILL_Y = 92;
-  var PILL_H = 34;
-  var LIST_TOP = 146;
-  var ROW_H = 41;
-  var ROW_GAP = 2;
-  var LIST_MARGIN = 16;
+  var MARGIN = 14;
+  var PILL_Y = 74;
+  var PILL_H = 36;
+  var LIST_TOP = 148;
+  var ROW_H = 38;
+  var ROW_GAP = 3;
   function pillRect(index) {
-    const w = (DESIGN_W - LIST_MARGIN * 2 - 12) / 3;
-    return { x: LIST_MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
+    const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
+    return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
   }
   function rowRect(index) {
     return {
-      x: LIST_MARGIN,
+      x: MARGIN,
       y: LIST_TOP + index * (ROW_H + ROW_GAP),
-      w: DESIGN_W - LIST_MARGIN * 2,
+      w: DESIGN_W - MARGIN * 2,
       h: ROW_H
     };
   }
   function drawMenu() {
-    ctx.fillStyle = "#0C1A23";
-    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
-    ctx.textAlign = "left";
-    ctx.fillStyle = COLORS.text;
-    ctx.font = "900 30px sans-serif";
-    ctx.fillText("HARBOR LOOP", LIST_MARGIN, 52);
-    ctx.fillStyle = COLORS.muted;
-    ctx.font = "600 11px sans-serif";
-    ctx.fillText("16 MODES · 3 SPEEDS · 48 LEADERBOARDS", LIST_MARGIN, 70);
-    ctx.textAlign = "right";
-    ctx.fillStyle = COLORS.accent;
-    ctx.font = "900 13px monospace";
-    ctx.fillText(`${careerPoints()} PTS`, DESIGN_W - LIST_MARGIN, 52);
+    screenBackground(DESIGN_W, DESIGN_H);
+    headline("HARBOR LOOP", MARGIN, 44, 30, UI.card);
+    const points = `${careerPoints()}`;
+    ctx.font = "900 12px sans-serif";
+    const pointsWidth = Math.max(64, ctx.measureText(points).width + 40);
+    chip(
+      { x: DESIGN_W - MARGIN - pointsWidth, y: 24, w: pointsWidth, h: 26 },
+      `${points} PTS`,
+      UI.chip,
+      UI.primary
+    );
     DIFFICULTIES.forEach((difficulty, index) => {
       const rect = pillRect(index);
       const selected = app.difficulty === difficulty;
-      roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 10);
-      ctx.fillStyle = selected ? COLORS.buttonActive : COLORS.button;
-      ctx.fill();
-      ctx.lineWidth = 1.6;
-      ctx.strokeStyle = selected ? COLORS.accentLight : COLORS.buttonEdge;
-      ctx.stroke();
+      panel(rect, {
+        fill: selected ? UI.primary : UI.chip,
+        radius: rect.h / 2,
+        lift: selected ? 4 : 2
+      });
       ctx.textAlign = "center";
-      ctx.fillStyle = selected ? COLORS.accentLight : COLORS.muted;
-      ctx.font = "900 12px sans-serif";
-      ctx.fillText(DIFFICULTY_LABEL[difficulty], rect.x + rect.w / 2, rect.y + 22);
+      ctx.fillStyle = selected ? UI.ink : UI.card;
+      ctx.font = "900 13px sans-serif";
+      ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
     });
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,246,228,0.72)";
+    ctx.font = "600 11px sans-serif";
+    ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
     MODES.forEach((mode, index) => {
       const rect = rowRect(index);
-      roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 9);
-      ctx.fillStyle = COLORS.button;
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = COLORS.buttonEdge;
-      ctx.stroke();
+      const fromOriginal = ORIGINAL_MODE_IDS.has(mode.id);
+      panel(rect, { fill: fromOriginal ? UI.card : UI.cardAlt, radius: 11, lift: 3 });
+      ctx.save();
+      roundRect2(rect);
+      ctx.clip();
+      ctx.fillStyle = fromOriginal ? UI.primary : UI.good;
+      ctx.fillRect(rect.x, rect.y, 5, rect.h);
+      ctx.restore();
       ctx.textAlign = "left";
-      ctx.fillStyle = COLORS.text;
+      ctx.fillStyle = UI.ink;
       ctx.font = "900 13px sans-serif";
-      ctx.fillText(mode.name, rect.x + 10, rect.y + 17);
-      if (ORIGINAL_MODE_IDS.has(mode.id)) {
-        const labelWidth = ctx.measureText(mode.name).width;
-        ctx.fillStyle = COLORS.accent;
-        ctx.font = "900 8px sans-serif";
-        ctx.fillText("PJ", rect.x + 16 + labelWidth, rect.y + 13);
-      }
-      ctx.fillStyle = COLORS.muted;
+      ctx.fillText(mode.name, rect.x + 14, rect.y + 17);
+      const nameWidth = ctx.measureText(mode.name).width;
+      ctx.fillStyle = fromOriginal ? UI.primaryDeep : UI.good;
+      ctx.font = "900 8px sans-serif";
+      ctx.fillText(fromOriginal ? "PJ" : "NEW", rect.x + 19 + nameWidth, rect.y + 13);
+      ctx.fillStyle = UI.inkSoft;
       ctx.font = "500 9.5px sans-serif";
-      ctx.fillText(mode.rule, rect.x + 10, rect.y + 32);
+      ctx.fillText(mode.rule, rect.x + 14, rect.y + 30);
       const best2 = bestScore(mode.id, app.difficulty);
       ctx.textAlign = "right";
       if (best2 === null) {
-        ctx.fillStyle = "rgba(247,244,234,0.28)";
-        ctx.font = "700 10px monospace";
-        ctx.fillText("--", rect.x + rect.w - 10, rect.y + 25);
+        ctx.fillStyle = "rgba(34,50,63,0.28)";
+        ctx.font = "900 12px monospace";
+        ctx.fillText("--", rect.x + rect.w - 12, rect.y + 24);
       } else {
-        ctx.fillStyle = COLORS.accentLight;
-        ctx.font = "900 14px monospace";
-        ctx.fillText(String(best2), rect.x + rect.w - 10, rect.y + 25);
+        ctx.fillStyle = UI.ink;
+        ctx.font = "900 16px monospace";
+        ctx.fillText(String(best2), rect.x + rect.w - 12, rect.y + 25);
       }
     });
     ctx.textAlign = "center";
   }
+  function roundRect2(rect) {
+    const r = 11;
+    ctx.beginPath();
+    ctx.moveTo(rect.x + r, rect.y);
+    ctx.arcTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h, r);
+    ctx.arcTo(rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h, r);
+    ctx.arcTo(rect.x, rect.y + rect.h, rect.x, rect.y, r);
+    ctx.arcTo(rect.x, rect.y, rect.x + rect.w, rect.y, r);
+    ctx.closePath();
+  }
   function handleMenuTap(x, y) {
     for (let i = 0; i < DIFFICULTIES.length; i++) {
-      const rect = pillRect(i);
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+      if (hits(pillRect(i), x, y)) {
         app.difficulty = DIFFICULTIES[i];
         return true;
       }
     }
     for (let i = 0; i < MODES.length; i++) {
-      const rect = rowRect(i);
-      if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+      if (hits(rowRect(i), x, y)) {
         startMode(MODES[i].id);
         return true;
       }
@@ -2067,20 +2183,18 @@ var HarborLoop = (() => {
   }
 
   // src/screens/result.ts
-  var PANEL_X = 20;
-  var PANEL_W = DESIGN_W - PANEL_X * 2;
-  var PANEL_Y = 372;
-  var PANEL_H = 268;
-  var BUTTONS = [
-    { id: "retry", label: "再来一次", x: PANEL_X, y: 664, w: PANEL_W, h: 52, primary: true },
-    { id: "share", label: "分享成绩", x: PANEL_X, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false },
-    { id: "menu", label: "选择模式", x: PANEL_X + PANEL_W / 2 + 5, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false }
-  ];
-  var OUTCOME_TEXT = {
-    cleared: "目标达成",
-    timeout: "时间到",
-    wrecked: "撞毁",
-    running: ""
+  var MARGIN2 = 20;
+  var CONTENT_W = DESIGN_W - MARGIN2 * 2;
+  var SCORE_CARD = { x: MARGIN2, y: 96, w: CONTENT_W, h: 214 };
+  var RANK_CARD = { x: MARGIN2, y: 328, w: CONTENT_W, h: 300 };
+  var RETRY = { x: MARGIN2, y: 648, w: CONTENT_W, h: 56 };
+  var SHARE = { x: MARGIN2, y: 716, w: CONTENT_W / 2 - 5, h: 50 };
+  var MENU = { x: MARGIN2 + CONTENT_W / 2 + 5, y: 716, w: CONTENT_W / 2 - 5, h: 50 };
+  var OUTCOME = {
+    cleared: { text: "目标达成", fill: UI.good },
+    timeout: { text: "时间到", fill: UI.primary },
+    wrecked: { text: "撞毁", fill: UI.bad },
+    running: { text: "", fill: UI.primary }
   };
   var rankingRequested = false;
   function enterResultScreen() {
@@ -2091,89 +2205,89 @@ var HarborLoop = (() => {
     const summary = app.result;
     if (!summary) return;
     const mode = modeById(summary.modeId);
-    ctx.fillStyle = "#0C1A23";
-    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    const outcome = (_a = OUTCOME[summary.outcome]) != null ? _a : OUTCOME.running;
+    screenBackground(DESIGN_W, DESIGN_H);
+    headline(mode.name, DESIGN_W / 2, 56, 24, UI.card, "center");
+    ctx.font = "900 11px sans-serif";
+    const diffLabel = DIFFICULTY_PROFILES[summary.difficulty].label;
+    const diffWidth = Math.max(72, ctx.measureText(diffLabel).width + 32);
+    chip(
+      { x: (DESIGN_W - diffWidth) / 2, y: 66, w: diffWidth, h: 22 },
+      diffLabel,
+      UI.chip,
+      UI.primary
+    );
+    panel(SCORE_CARD, { fill: UI.card, radius: 18, lift: 6 });
     ctx.textAlign = "center";
-    ctx.fillStyle = COLORS.muted;
-    ctx.font = "700 11px sans-serif";
-    ctx.fillText(DIFFICULTY_LABEL[summary.difficulty], DESIGN_W / 2, 92);
-    ctx.fillStyle = COLORS.text;
-    ctx.font = "900 26px sans-serif";
-    ctx.fillText(mode.name, DESIGN_W / 2, 124);
-    ctx.fillStyle = summary.outcome === "cleared" ? COLORS.accentLight : COLORS.muted;
-    ctx.font = "700 14px sans-serif";
-    ctx.fillText((_a = OUTCOME_TEXT[summary.outcome]) != null ? _a : "", DESIGN_W / 2, 152);
-    ctx.fillStyle = summary.newBest ? COLORS.accentLight : COLORS.text;
-    ctx.font = "900 76px monospace";
-    ctx.fillText(String(summary.score), DESIGN_W / 2, 244);
-    ctx.fillStyle = COLORS.muted;
-    ctx.font = "700 12px sans-serif";
-    ctx.fillText(summary.scoreUnit, DESIGN_W / 2, 268);
+    ctx.fillStyle = outcome.fill;
+    ctx.font = "900 17px sans-serif";
+    ctx.fillText(outcome.text, DESIGN_W / 2, SCORE_CARD.y + 34);
+    ctx.fillStyle = UI.ink;
+    ctx.font = "900 70px monospace";
+    ctx.fillText(String(summary.score), DESIGN_W / 2, SCORE_CARD.y + 116);
+    ctx.fillStyle = UI.inkSoft;
+    ctx.font = "900 11px sans-serif";
+    ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
     if (summary.newBest) {
-      ctx.fillStyle = COLORS.accent;
-      ctx.font = "900 15px sans-serif";
-      ctx.fillText("NEW BEST!", DESIGN_W / 2, 300);
+      chip(
+        { x: DESIGN_W / 2 - 60, y: SCORE_CARD.y + 156, w: 120, h: 30 },
+        "NEW BEST!",
+        UI.primary,
+        UI.ink,
+        13
+      );
     } else if (summary.best !== null) {
-      ctx.fillStyle = COLORS.muted;
-      ctx.font = "700 12px monospace";
-      ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, 300);
+      ctx.fillStyle = UI.inkSoft;
+      ctx.font = "900 13px monospace";
+      ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 176);
     }
     drawRankingPanel();
-    drawButtons();
+    chunkyButton(RETRY, "再来一次", "primary", 18);
+    chunkyButton(SHARE, "分享成绩", "good", 15);
+    chunkyButton(MENU, "选择模式", "plain", 15);
   }
   function drawRankingPanel() {
-    roundRect(ctx, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 14);
-    ctx.fillStyle = "rgba(8,17,25,0.66)";
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = COLORS.buttonEdge;
-    ctx.stroke();
+    panel(RANK_CARD, { fill: UI.chip, radius: 16, lift: 5 });
     ctx.textAlign = "left";
-    ctx.fillStyle = COLORS.muted;
-    ctx.font = "900 11px sans-serif";
-    ctx.fillText("好友排行榜", PANEL_X + 14, PANEL_Y + 24);
+    ctx.fillStyle = UI.card;
+    ctx.font = "900 12px sans-serif";
+    ctx.fillText("好友排行榜", RANK_CARD.x + 14, RANK_CARD.y + 26);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,246,228,0.45)";
+    ctx.font = "600 9px sans-serif";
+    ctx.fillText("按生涯积分排名", RANK_CARD.x + RANK_CARD.w - 14, RANK_CARD.y + 26);
     ctx.textAlign = "center";
+    const listY = RANK_CARD.y + 38;
+    const listH = RANK_CARD.h - 48;
     if (!leaderboardAvailable()) {
-      ctx.fillStyle = "rgba(247,244,234,0.32)";
+      ctx.fillStyle = "rgba(255,246,228,0.38)";
       ctx.font = "600 11px sans-serif";
-      ctx.fillText("好友榜仅在微信小游戏内可用", DESIGN_W / 2, PANEL_Y + PANEL_H / 2);
+      ctx.fillText("好友榜仅在微信小游戏内可用", DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
       return;
     }
-    const listY = PANEL_Y + 36;
-    const listH = PANEL_H - 46;
     if (!rankingRequested) {
-      requestFriendRanking(PANEL_W - 20, listH, DPR);
+      requestFriendRanking(RANK_CARD.w - 20, listH, DPR);
       rankingRequested = true;
     }
     const shared = sharedCanvas();
     if (shared) {
       try {
-        ctx.drawImage(shared, PANEL_X + 10, listY, PANEL_W - 20, listH);
+        ctx.drawImage(shared, RANK_CARD.x + 10, listY, RANK_CARD.w - 20, listH);
       } catch (error) {
       }
     }
   }
-  function drawButtons() {
-    for (const button of BUTTONS) {
-      roundRect(ctx, button.x, button.y, button.w, button.h, 14);
-      ctx.fillStyle = button.primary ? COLORS.buttonActive : COLORS.button;
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = button.primary ? COLORS.accentLight : COLORS.buttonEdge;
-      ctx.stroke();
-      ctx.textAlign = "center";
-      ctx.fillStyle = button.primary ? COLORS.accentLight : COLORS.text;
-      ctx.font = "900 15px sans-serif";
-      ctx.fillText(button.label, button.x + button.w / 2, button.y + button.h / 2 + 5);
-    }
-  }
   function handleResultTap(x, y) {
-    for (const button of BUTTONS) {
-      if (x < button.x || x > button.x + button.w) continue;
-      if (y < button.y || y > button.y + button.h) continue;
-      if (button.id === "retry") retryRun();
-      else if (button.id === "menu") openMenu();
-      else shareRun();
+    if (hits(RETRY, x, y)) {
+      retryRun();
+      return true;
+    }
+    if (hits(MENU, x, y)) {
+      openMenu();
+      return true;
+    }
+    if (hits(SHARE, x, y)) {
+      shareRun();
       return true;
     }
     return false;

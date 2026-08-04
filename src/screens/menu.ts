@@ -1,125 +1,138 @@
-/** Mode select: difficulty pills on top, then one row per mode. */
+/** Mode select: header, difficulty pills with a live blurb, then one card per mode. */
 
 import { app, startMode } from '../app';
-import { DIFFICULTIES, DIFFICULTY_LABEL } from '../difficulty';
+import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
 import { MODES, ORIGINAL_MODE_IDS } from '../modes';
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
-import { roundRect } from '../render/primitives';
+import { chip, headline, hits, panel, screenBackground, type Rect } from '../render/ui';
 import { bestScore, careerPoints } from '../storage';
-import { COLORS } from '../theme';
+import { UI } from '../theme';
 
-const PILL_Y = 92;
-const PILL_H = 34;
-const LIST_TOP = 146;
-const ROW_H = 41;
-const ROW_GAP = 2;
-const LIST_MARGIN = 16;
+const MARGIN = 14;
+const PILL_Y = 74;
+const PILL_H = 36;
+const LIST_TOP = 148;
+const ROW_H = 38;
+const ROW_GAP = 3;
 
-function pillRect(index: number): { x: number; y: number; w: number; h: number } {
-  const w = (DESIGN_W - LIST_MARGIN * 2 - 12) / 3;
-  return { x: LIST_MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
+function pillRect(index: number): Rect {
+  const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
+  return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
 }
 
-function rowRect(index: number): { x: number; y: number; w: number; h: number } {
+function rowRect(index: number): Rect {
   return {
-    x: LIST_MARGIN,
+    x: MARGIN,
     y: LIST_TOP + index * (ROW_H + ROW_GAP),
-    w: DESIGN_W - LIST_MARGIN * 2,
+    w: DESIGN_W - MARGIN * 2,
     h: ROW_H
   };
 }
 
 export function drawMenu(): void {
-  ctx.fillStyle = '#0C1A23';
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  screenBackground(DESIGN_W, DESIGN_H);
 
-  ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.text;
-  ctx.font = '900 30px sans-serif';
-  ctx.fillText('HARBOR LOOP', LIST_MARGIN, 52);
+  headline('HARBOR LOOP', MARGIN, 44, 30, UI.card);
 
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = '600 11px sans-serif';
-  ctx.fillText('16 MODES · 3 SPEEDS · 48 LEADERBOARDS', LIST_MARGIN, 70);
+  // Career total, the single number the friend ranking sorts on.
+  const points = `${careerPoints()}`;
+  ctx.font = '900 12px sans-serif';
+  const pointsWidth = Math.max(64, ctx.measureText(points).width + 40);
+  chip(
+    { x: DESIGN_W - MARGIN - pointsWidth, y: 24, w: pointsWidth, h: 26 },
+    `${points} PTS`,
+    UI.chip,
+    UI.primary
+  );
 
-  ctx.textAlign = 'right';
-  ctx.fillStyle = COLORS.accent;
-  ctx.font = '900 13px monospace';
-  ctx.fillText(`${careerPoints()} PTS`, DESIGN_W - LIST_MARGIN, 52);
-
-  // Difficulty pills.
+  // Difficulty.
   DIFFICULTIES.forEach((difficulty, index) => {
     const rect = pillRect(index);
     const selected = app.difficulty === difficulty;
-    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 10);
-    ctx.fillStyle = selected ? COLORS.buttonActive : COLORS.button;
-    ctx.fill();
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = selected ? COLORS.accentLight : COLORS.buttonEdge;
-    ctx.stroke();
-
+    panel(rect, {
+      fill: selected ? UI.primary : UI.chip,
+      radius: rect.h / 2,
+      lift: selected ? 4 : 2
+    });
     ctx.textAlign = 'center';
-    ctx.fillStyle = selected ? COLORS.accentLight : COLORS.muted;
-    ctx.font = '900 12px sans-serif';
-    ctx.fillText(DIFFICULTY_LABEL[difficulty], rect.x + rect.w / 2, rect.y + 22);
+    ctx.fillStyle = selected ? UI.ink : UI.card;
+    ctx.font = '900 13px sans-serif';
+    ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
   });
 
-  // Mode rows.
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,246,228,0.72)';
+  ctx.font = '600 11px sans-serif';
+  ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
+
+  // Mode cards.
   MODES.forEach((mode, index) => {
     const rect = rowRect(index);
-    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 9);
-    ctx.fillStyle = COLORS.button;
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = COLORS.buttonEdge;
-    ctx.stroke();
+    const fromOriginal = ORIGINAL_MODE_IDS.has(mode.id);
+    panel(rect, { fill: fromOriginal ? UI.card : UI.cardAlt, radius: 11, lift: 3 });
+
+    // Colour tab marks which game the mode comes from.
+    ctx.save();
+    roundRect(rect);
+    ctx.clip();
+    ctx.fillStyle = fromOriginal ? UI.primary : UI.good;
+    ctx.fillRect(rect.x, rect.y, 5, rect.h);
+    ctx.restore();
 
     ctx.textAlign = 'left';
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = UI.ink;
     ctx.font = '900 13px sans-serif';
-    ctx.fillText(mode.name, rect.x + 10, rect.y + 17);
+    ctx.fillText(mode.name, rect.x + 14, rect.y + 17);
 
-    // A quiet marker separates the documented originals from the new modes.
-    if (ORIGINAL_MODE_IDS.has(mode.id)) {
-      const labelWidth = ctx.measureText(mode.name).width;
-      ctx.fillStyle = COLORS.accent;
-      ctx.font = '900 8px sans-serif';
-      ctx.fillText('PJ', rect.x + 16 + labelWidth, rect.y + 13);
-    }
+    // Spell out the provenance rather than relying on the card tint alone.
+    const nameWidth = ctx.measureText(mode.name).width;
+    ctx.fillStyle = fromOriginal ? UI.primaryDeep : UI.good;
+    ctx.font = '900 8px sans-serif';
+    ctx.fillText(fromOriginal ? 'PJ' : 'NEW', rect.x + 19 + nameWidth, rect.y + 13);
 
-    ctx.fillStyle = COLORS.muted;
+    ctx.fillStyle = UI.inkSoft;
     ctx.font = '500 9.5px sans-serif';
-    ctx.fillText(mode.rule, rect.x + 10, rect.y + 32);
+    ctx.fillText(mode.rule, rect.x + 14, rect.y + 30);
 
     const best = bestScore(mode.id, app.difficulty);
     ctx.textAlign = 'right';
     if (best === null) {
-      ctx.fillStyle = 'rgba(247,244,234,0.28)';
-      ctx.font = '700 10px monospace';
-      ctx.fillText('--', rect.x + rect.w - 10, rect.y + 25);
+      ctx.fillStyle = 'rgba(34,50,63,0.28)';
+      ctx.font = '900 12px monospace';
+      ctx.fillText('--', rect.x + rect.w - 12, rect.y + 24);
     } else {
-      ctx.fillStyle = COLORS.accentLight;
-      ctx.font = '900 14px monospace';
-      ctx.fillText(String(best), rect.x + rect.w - 10, rect.y + 25);
+      ctx.fillStyle = UI.ink;
+      ctx.font = '900 16px monospace';
+      ctx.fillText(String(best), rect.x + rect.w - 12, rect.y + 25);
     }
   });
 
   ctx.textAlign = 'center';
 }
 
+/** Local helper: the clip path for a card, used for the coloured edge tab. */
+function roundRect(rect: Rect): void {
+  const r = 11;
+  ctx.beginPath();
+  ctx.moveTo(rect.x + r, rect.y);
+  ctx.arcTo(rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + rect.h, r);
+  ctx.arcTo(rect.x + rect.w, rect.y + rect.h, rect.x, rect.y + rect.h, r);
+  ctx.arcTo(rect.x, rect.y + rect.h, rect.x, rect.y, r);
+  ctx.arcTo(rect.x, rect.y, rect.x + rect.w, rect.y, r);
+  ctx.closePath();
+}
+
 /** Returns true when the tap was consumed. */
 export function handleMenuTap(x: number, y: number): boolean {
   for (let i = 0; i < DIFFICULTIES.length; i++) {
-    const rect = pillRect(i);
-    if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+    if (hits(pillRect(i), x, y)) {
       app.difficulty = DIFFICULTIES[i];
       return true;
     }
   }
 
   for (let i = 0; i < MODES.length; i++) {
-    const rect = rowRect(i);
-    if (x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h) {
+    if (hits(rowRect(i), x, y)) {
       startMode(MODES[i].id);
       return true;
     }

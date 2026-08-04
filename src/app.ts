@@ -48,8 +48,9 @@ export function finishRun(): void {
   const mode = modeById(run.modeId);
   const lowerIsBetter = Boolean(mode.lowerIsBetter);
 
-  // A timed-out Time Attack never finished the laps, so its clock is not a result.
-  const scoreCounts = !(lowerIsBetter && run.outcome !== 'cleared');
+  // A timed-out Time Attack never finished the laps, so its clock is not a result,
+  // and a zero is never worth recording as a personal best.
+  const scoreCounts = run.score > 0 && !(lowerIsBetter && run.outcome !== 'cleared');
   const newBest = scoreCounts &&
     submitScore(run.modeId, run.difficulty, run.score, lowerIsBetter);
 

@@ -1,40 +1,37 @@
-/** Result screen: score, personal best, friend ranking and the share hook. */
+/** Result screen: score card, friend ranking and the three actions. */
 
 import { app, openMenu, retryRun } from '../app';
-import { DIFFICULTY_LABEL } from '../difficulty';
+import { DIFFICULTY_PROFILES } from '../difficulty';
 import { leaderboardAvailable, requestFriendRanking, sharedCanvas } from '../leaderboard';
 import { modeById } from '../modes';
 import { ctx, DESIGN_H, DESIGN_W, DPR } from '../platform';
-import { roundRect } from '../render/primitives';
+import {
+  chip,
+  chunkyButton,
+  headline,
+  hits,
+  panel,
+  screenBackground,
+  type Rect
+} from '../render/ui';
 import { shareRun } from '../share';
-import { COLORS } from '../theme';
+import { UI } from '../theme';
 
-const PANEL_X = 20;
-const PANEL_W = DESIGN_W - PANEL_X * 2;
-const PANEL_Y = 372;
-const PANEL_H = 268;
+const MARGIN = 20;
+const CONTENT_W = DESIGN_W - MARGIN * 2;
 
-interface Button {
-  id: 'retry' | 'menu' | 'share';
-  label: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  primary: boolean;
-}
+const SCORE_CARD: Rect = { x: MARGIN, y: 96, w: CONTENT_W, h: 214 };
+const RANK_CARD: Rect = { x: MARGIN, y: 328, w: CONTENT_W, h: 300 };
 
-const BUTTONS: Button[] = [
-  { id: 'retry', label: '再来一次', x: PANEL_X, y: 664, w: PANEL_W, h: 52, primary: true },
-  { id: 'share', label: '分享成绩', x: PANEL_X, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false },
-  { id: 'menu', label: '选择模式', x: PANEL_X + PANEL_W / 2 + 5, y: 724, w: PANEL_W / 2 - 5, h: 46, primary: false }
-];
+const RETRY: Rect = { x: MARGIN, y: 648, w: CONTENT_W, h: 56 };
+const SHARE: Rect = { x: MARGIN, y: 716, w: CONTENT_W / 2 - 5, h: 50 };
+const MENU: Rect = { x: MARGIN + CONTENT_W / 2 + 5, y: 716, w: CONTENT_W / 2 - 5, h: 50 };
 
-const OUTCOME_TEXT: Record<string, string> = {
-  cleared: '目标达成',
-  timeout: '时间到',
-  wrecked: '撞毁',
-  running: ''
+const OUTCOME: Record<string, { text: string; fill: string }> = {
+  cleared: { text: '目标达成', fill: UI.good },
+  timeout: { text: '时间到', fill: UI.primary },
+  wrecked: { text: '撞毁', fill: UI.bad },
+  running: { text: '', fill: UI.primary }
 };
 
 let rankingRequested = false;
@@ -47,72 +44,85 @@ export function drawResult(): void {
   const summary = app.result;
   if (!summary) return;
   const mode = modeById(summary.modeId);
+  const outcome = OUTCOME[summary.outcome] ?? OUTCOME.running;
 
-  ctx.fillStyle = '#0C1A23';
-  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  screenBackground(DESIGN_W, DESIGN_H);
+
+  headline(mode.name, DESIGN_W / 2, 56, 24, UI.card, 'center');
+
+  ctx.font = '900 11px sans-serif';
+  const diffLabel = DIFFICULTY_PROFILES[summary.difficulty].label;
+  const diffWidth = Math.max(72, ctx.measureText(diffLabel).width + 32);
+  chip(
+    { x: (DESIGN_W - diffWidth) / 2, y: 66, w: diffWidth, h: 22 },
+    diffLabel,
+    UI.chip,
+    UI.primary
+  );
+
+  // --- score card ---
+  panel(SCORE_CARD, { fill: UI.card, radius: 18, lift: 6 });
 
   ctx.textAlign = 'center';
+  ctx.fillStyle = outcome.fill;
+  ctx.font = '900 17px sans-serif';
+  ctx.fillText(outcome.text, DESIGN_W / 2, SCORE_CARD.y + 34);
 
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = '700 11px sans-serif';
-  ctx.fillText(DIFFICULTY_LABEL[summary.difficulty], DESIGN_W / 2, 92);
+  ctx.fillStyle = UI.ink;
+  ctx.font = '900 70px monospace';
+  ctx.fillText(String(summary.score), DESIGN_W / 2, SCORE_CARD.y + 116);
 
-  ctx.fillStyle = COLORS.text;
-  ctx.font = '900 26px sans-serif';
-  ctx.fillText(mode.name, DESIGN_W / 2, 124);
-
-  ctx.fillStyle = summary.outcome === 'cleared' ? COLORS.accentLight : COLORS.muted;
-  ctx.font = '700 14px sans-serif';
-  ctx.fillText(OUTCOME_TEXT[summary.outcome] ?? '', DESIGN_W / 2, 152);
-
-  // Score block.
-  ctx.fillStyle = summary.newBest ? COLORS.accentLight : COLORS.text;
-  ctx.font = '900 76px monospace';
-  ctx.fillText(String(summary.score), DESIGN_W / 2, 244);
-
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = '700 12px sans-serif';
-  ctx.fillText(summary.scoreUnit, DESIGN_W / 2, 268);
+  ctx.fillStyle = UI.inkSoft;
+  ctx.font = '900 11px sans-serif';
+  ctx.fillText(summary.scoreUnit, DESIGN_W / 2, SCORE_CARD.y + 138);
 
   if (summary.newBest) {
-    ctx.fillStyle = COLORS.accent;
-    ctx.font = '900 15px sans-serif';
-    ctx.fillText('NEW BEST!', DESIGN_W / 2, 300);
+    chip(
+      { x: DESIGN_W / 2 - 60, y: SCORE_CARD.y + 156, w: 120, h: 30 },
+      'NEW BEST!',
+      UI.primary,
+      UI.ink,
+      13
+    );
   } else if (summary.best !== null) {
-    ctx.fillStyle = COLORS.muted;
-    ctx.font = '700 12px monospace';
-    ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, 300);
+    ctx.fillStyle = UI.inkSoft;
+    ctx.font = '900 13px monospace';
+    ctx.fillText(`BEST  ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 176);
   }
 
   drawRankingPanel();
-  drawButtons();
+
+  chunkyButton(RETRY, '再来一次', 'primary', 18);
+  chunkyButton(SHARE, '分享成绩', 'good', 15);
+  chunkyButton(MENU, '选择模式', 'plain', 15);
 }
 
 function drawRankingPanel(): void {
-  roundRect(ctx, PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 14);
-  ctx.fillStyle = 'rgba(8,17,25,0.66)';
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = COLORS.buttonEdge;
-  ctx.stroke();
+  panel(RANK_CARD, { fill: UI.chip, radius: 16, lift: 5 });
 
   ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = '900 11px sans-serif';
-  ctx.fillText('好友排行榜', PANEL_X + 14, PANEL_Y + 24);
+  ctx.fillStyle = UI.card;
+  ctx.font = '900 12px sans-serif';
+  ctx.fillText('好友排行榜', RANK_CARD.x + 14, RANK_CARD.y + 26);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255,246,228,0.45)';
+  ctx.font = '600 9px sans-serif';
+  ctx.fillText('按生涯积分排名', RANK_CARD.x + RANK_CARD.w - 14, RANK_CARD.y + 26);
   ctx.textAlign = 'center';
 
+  const listY = RANK_CARD.y + 38;
+  const listH = RANK_CARD.h - 48;
+
   if (!leaderboardAvailable()) {
-    ctx.fillStyle = 'rgba(247,244,234,0.32)';
+    ctx.fillStyle = 'rgba(255,246,228,0.38)';
     ctx.font = '600 11px sans-serif';
-    ctx.fillText('好友榜仅在微信小游戏内可用', DESIGN_W / 2, PANEL_Y + PANEL_H / 2);
+    ctx.fillText('好友榜仅在微信小游戏内可用', DESIGN_W / 2, RANK_CARD.y + RANK_CARD.h / 2);
     return;
   }
 
-  const listY = PANEL_Y + 36;
-  const listH = PANEL_H - 46;
   if (!rankingRequested) {
-    requestFriendRanking(PANEL_W - 20, listH, DPR);
+    requestFriendRanking(RANK_CARD.w - 20, listH, DPR);
     rankingRequested = true;
   }
 
@@ -120,38 +130,25 @@ function drawRankingPanel(): void {
   if (shared) {
     try {
       // The open data context renders at device resolution; scale it back down.
-      ctx.drawImage(shared as unknown as CanvasImageSource, PANEL_X + 10, listY, PANEL_W - 20, listH);
+      ctx.drawImage(shared as unknown as CanvasImageSource, RANK_CARD.x + 10, listY, RANK_CARD.w - 20, listH);
     } catch (error) {
       /* the sub-context may not have painted yet */
     }
   }
 }
 
-function drawButtons(): void {
-  for (const button of BUTTONS) {
-    roundRect(ctx, button.x, button.y, button.w, button.h, 14);
-    ctx.fillStyle = button.primary ? COLORS.buttonActive : COLORS.button;
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = button.primary ? COLORS.accentLight : COLORS.buttonEdge;
-    ctx.stroke();
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = button.primary ? COLORS.accentLight : COLORS.text;
-    ctx.font = '900 15px sans-serif';
-    ctx.fillText(button.label, button.x + button.w / 2, button.y + button.h / 2 + 5);
-  }
-}
-
 /** Returns true when the tap was consumed. */
 export function handleResultTap(x: number, y: number): boolean {
-  for (const button of BUTTONS) {
-    if (x < button.x || x > button.x + button.w) continue;
-    if (y < button.y || y > button.y + button.h) continue;
-
-    if (button.id === 'retry') retryRun();
-    else if (button.id === 'menu') openMenu();
-    else shareRun();
+  if (hits(RETRY, x, y)) {
+    retryRun();
+    return true;
+  }
+  if (hits(MENU, x, y)) {
+    openMenu();
+    return true;
+  }
+  if (hits(SHARE, x, y)) {
+    shareRun();
     return true;
   }
   return false;

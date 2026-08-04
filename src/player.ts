@@ -8,6 +8,7 @@ import {
   PLAYER_COAST_DECELERATION,
   PLAYER_TIER_ACCELERATION
 } from './config';
+import { tuning } from './difficulty';
 import { moveToward } from './mathUtil';
 import { vibrate } from './platform';
 import { baseCruiseSpeed, currentTargetSpeed, inputState, player } from './state';
@@ -45,7 +46,7 @@ export function beginCollision(): void {
   player.state = 'CRASHED';
   player.stateElapsed = 0;
   player.speed = 0;
-  player.invincible = 1.25;
+  player.invincible = tuning.profile.invincibleSeconds;
   player.combo = 0;
   player.tierBoostElapsed = 0;
   player.collisionCount += 1;

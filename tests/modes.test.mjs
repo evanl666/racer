@@ -101,6 +101,22 @@ check(
 );
 game.app.difficulty = 'normal';
 
+// Difficulty is more than speed: the field size changes too.
+const counts = {};
+for (const difficulty of ['normal', 'turbo', 'master']) {
+  game.app.difficulty = difficulty;
+  game.startMode('speed-monkey');
+  counts[difficulty] = game.aiCars.length;
+}
+check(
+  'each difficulty puts a different amount of traffic on track',
+  counts.normal < counts.turbo && counts.turbo < counts.master,
+  `${counts.normal} / ${counts.turbo} / ${counts.master}`
+);
+check('Normal is no longer the old 18-car field', counts.normal >= 24, `cars=${counts.normal}`);
+check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 6));
+game.app.difficulty = 'normal';
+
 // Hot Rods heats the engine while the throttle is held.
 game.startMode('hot-rods');
 fire('start', [THROTTLE]);

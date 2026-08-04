@@ -29,3 +29,27 @@ export const COLORS = {
   buttonDisabled: 'rgba(8,17,25,0.42)',
   buttonEdge: 'rgba(247,244,234,0.28)'
 } as const;
+
+/**
+ * Menu and result-screen palette.
+ *
+ * The race keeps its muted marine look, but the screens around it are built the
+ * way the popular WeChat casual games are: cream cards on a saturated ground,
+ * heavy dark outlines, hard offset shadows instead of blurs, and one loud warm
+ * colour reserved for the primary action.
+ */
+export const UI = {
+  ground: '#12384E',
+  groundDeep: '#0A2233',
+  groundStripe: 'rgba(255,255,255,0.028)',
+  card: '#FFF6E4',
+  cardAlt: '#FFEDCC',
+  ink: '#22323F',
+  inkSoft: '#6C7C88',
+  outline: '#152532',
+  primary: '#FFB43C',
+  primaryDeep: '#E38C15',
+  good: '#5FCF80',
+  bad: '#FF6B5E',
+  chip: '#1B3F55'
+} as const;

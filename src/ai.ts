@@ -11,8 +11,8 @@ import {
   AI_PLAYER_SAFETY_PER_SPEED,
   AI_WARNING_DURATION,
   LANE_COUNT,
-  MAX_SIMULTANEOUS_AI_ACTIONS
 } from './config';
+import { tuning } from './difficulty';
 import { aiCars, baseCruiseSpeed, player } from './state';
 import { advanceDistanceAtRoadSpeed, circularDistance, forwardPathDistance } from './track';
 import type { AiCar } from './types';
@@ -21,7 +21,9 @@ import type { AiCar } from './types';
 // As the red car accelerates, this zone grows so high-speed runs remain readable and fair.
 export function currentAiPlayerSafetyDistance(): number {
   const speedExtra = Math.max(0, player.speed - baseCruiseSpeed()) * AI_PLAYER_SAFETY_PER_SPEED;
-  return Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
+  const zone = Math.min(AI_PLAYER_MAX_SAFETY_DISTANCE, AI_PLAYER_BASE_SAFETY_DISTANCE + speedExtra);
+  // Harder settings shrink the courtesy zone, so traffic cuts in much closer.
+  return zone * tuning.profile.aiSafetyScale;
 }
 
 function playerIsApproachingAi(car: AiCar): boolean {
@@ -73,7 +75,7 @@ function shuffledDirections(): number[] {
 }
 
 function tryBeginAiLaneChange(car: AiCar): boolean {
-  if (countActiveAiLaneChanges() >= MAX_SIMULTANEOUS_AI_ACTIONS) return false;
+  if (countActiveAiLaneChanges() >= tuning.profile.maxSimultaneousAi) return false;
   if (playerIsApproachingAi(car)) return false;
 
   const ahead = nearestAiAhead(car, car.visualLane, 62);
@@ -108,7 +110,8 @@ export function updateAi(dt: number): void {
     car.decisionTimer -= dt;
 
     if (car.state === 'IDLE' && car.decisionTimer <= 0) {
-      car.decisionTimer = AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY);
+      car.decisionTimer = (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
+        tuning.profile.aiDecisionScale;
       tryBeginAiLaneChange(car);
     } else if (car.state === 'WARNING') {
       car.stateElapsed += dt;

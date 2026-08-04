@@ -4,11 +4,11 @@
  */
 
 import {
-  AI_BLUEPRINTS,
   AI_MAX_DECISION_DELAY,
   AI_MIN_DECISION_DELAY,
   PLAYER_CRUISE_BASE_SPEED,
   PLAYER_MAX_SPEED,
+  buildBlueprints,
   SPEED_TIER_CRUISE,
   SPEED_TIER_THROTTLE
 } from './config';
@@ -72,7 +72,7 @@ export function resetGame(): void {
   player.heat = 0;
   player.travelled = 0;
 
-  aiCars = AI_BLUEPRINTS.map((blueprint, index) => {
+  aiCars = buildBlueprints(tuning.profile.carCount).map((blueprint, index) => {
     const distance = arc.total * blueprint.fraction;
     const baseSpeed = blueprint.speed * tuning.traffic;
     return {
@@ -89,7 +89,8 @@ export function resetGame(): void {
       state: 'IDLE',
       stateElapsed: 0,
       direction: 0,
-      decisionTimer: AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY),
+      decisionTimer: (AI_MIN_DECISION_DELAY + Math.random() * (AI_MAX_DECISION_DELAY - AI_MIN_DECISION_DELAY)) *
+        tuning.profile.aiDecisionScale,
       passIndex: Math.floor((player.distance - distance) / arc.total),
       alive: true,
       wreck: 0,

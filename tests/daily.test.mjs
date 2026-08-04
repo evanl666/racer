@@ -107,4 +107,48 @@ check('a daily run does not overwrite the mode best',
   game.bestScore(game.run.modeId, 'master') === beforeBest,
   `${beforeBest} -> ${game.bestScore(game.run.modeId, 'master')}`);
 
+// --- revive -----------------------------------------------------------------
+// Crashing out must offer exactly one second chance, and taking it must put the
+// player back into the same run rather than starting a new one.
+game.setUnlockOverride(true);
+game.startMode('speed-monkey');
+fire('start', [THROTTLE]);
+step(3);
+const scoreBefore = game.run.score;
+// Force a crash by parking a car on the player.
+game.aiCars.length = 1;
+game.aiCars[0].distance = game.player.distance + 6;
+game.aiCars[0].lane = game.player.lane;
+game.aiCars[0].visualLane = game.player.visualLane;
+game.aiCars[0].alive = true;
+game.player.invincible = 0;
+step(0.4);
+fire('cancel', [THROTTLE]);
+
+check('crashing out of Speed Monkey ends the run', game.app.screen === 'RESULT', game.app.screen);
+check('a revive is offered', game.canRevive() === true);
+
+const revived = game.shareForRevive();
+check('taking the revive returns to the race', revived === true && game.app.screen === 'PLAYING',
+  `${revived} ${game.app.screen}`);
+check('the revive continues the same run', game.run.score === scoreBefore || game.run.score >= scoreBefore,
+  `${scoreBefore} -> ${game.run.score}`);
+check('the revive grants invulnerability', game.player.invincible > 1,
+  `${game.player.invincible.toFixed(2)}s`);
+check('the revive is counted', game.run.revives === 1, `${game.run.revives}`);
+
+// Only one per run.
+game.player.invincible = 0;
+game.aiCars[0].distance = game.player.distance + 6;
+game.aiCars[0].visualLane = game.player.visualLane;
+step(0.5);
+check('a second crash ends the run for good', game.app.screen === 'RESULT', game.app.screen);
+check('no second revive is offered', game.canRevive() === false);
+check('asking again is refused', game.shareForRevive() === false);
+
+// A cleared run is not something to be rescued from.
+game.startMode('combo-racers');
+game.run.outcome = 'cleared';
+check('a cleared run offers no revive', game.canRevive() === false);
+
 finish();

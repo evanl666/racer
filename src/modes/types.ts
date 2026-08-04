@@ -47,6 +47,8 @@ export interface RunState {
   stage: number;
   /** Score that clears the current daily stage; 0 when there is no target. */
   stageTarget: number;
+  /** Revives already spent this run. */
+  revives: number;
   outcome: RunOutcome;
   /** Objective progress in 0..1, drawn as a bar. Negative means "no bar". */
   progress: number;

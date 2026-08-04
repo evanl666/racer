@@ -1,12 +1,13 @@
 /** Screen state machine and the navigation between menu, race and results. */
 
 import { dailyPlan, dailyStage, todayKey } from './daily';
+import { setShareContext, shareRun } from './share';
 import { submitFriendScore, submitGlobalScore } from './leaderboard';
 import { MODES } from './modes';
 import type { Difficulty, ModeId, RunOutcome } from './modes/types';
 import { modeById } from './modes';
 import { modeUnlocked } from './progress';
-import { run, startRun } from './run';
+import { reviveAvailable, revive, run, startRun } from './run';
 import { bestScore, careerPoints, submitScore } from './storage';
 
 export type Screen = 'MENU' | 'PLAYING' | 'RESULT';
@@ -62,6 +63,34 @@ function startDailyStageTwo(): void {
   app.screen = 'PLAYING';
 }
 
+/**
+ * Trades a share for a second chance.
+ *
+ * The mini game share API opens the picker but does not tell us whether the
+ * player actually sent anything, and verifying it properly needs shareTicket
+ * plus a server round trip. So the share fires and the revive is granted either
+ * way; the point is to put sharing on the path of self-interest rather than to
+ * police it.
+ */
+export function shareForRevive(): boolean {
+  if (!reviveAvailable()) return false;
+  setShareContext({
+    modeId: run.modeId,
+    difficulty: run.difficulty,
+    score: run.score,
+    scoreUnit: modeById(run.modeId).scoreUnit,
+    stage: run.stage
+  });
+  shareRun();
+  revive();
+  app.screen = 'PLAYING';
+  return true;
+}
+
+export function canRevive(): boolean {
+  return reviveAvailable();
+}
+
 export function retryRun(): void {
   const summary = app.result;
   if (!summary) {
@@ -109,6 +138,14 @@ export function finishRun(): void {
     stageTarget: run.stageTarget,
     day: run.daily ? todayKey() : ''
   };
+
+  setShareContext({
+    modeId: run.modeId,
+    difficulty: run.difficulty,
+    score: run.score,
+    scoreUnit: mode.scoreUnit,
+    stage: run.stage
+  });
 
   if (run.daily) {
     // Daily scores go to their own board, partitioned by date.

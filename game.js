@@ -45,6 +45,7 @@ var HarborLoop = (() => {
     aiCars: () => aiCars,
     app: () => app,
     bestScore: () => bestScore,
+    canRevive: () => canRevive,
     careerPoints: () => careerPoints,
     clearSeed: () => clearSeed,
     dailyPlan: () => dailyPlan,
@@ -64,6 +65,7 @@ var HarborLoop = (() => {
     run: () => run,
     setSeed: () => setSeed,
     setUnlockOverride: () => setUnlockOverride,
+    shareForRevive: () => shareForRevive,
     starsFor: () => starsFor,
     startDaily: () => startDaily,
     startMode: () => startMode,
@@ -1028,12 +1030,12 @@ var HarborLoop = (() => {
       }
     }
   }
-  function createLoopingNoiseSource(context2) {
-    if (!context2 || typeof context2.createBuffer !== "function" || typeof context2.createBufferSource !== "function") return null;
+  function createLoopingNoiseSource(context3) {
+    if (!context3 || typeof context3.createBuffer !== "function" || typeof context3.createBufferSource !== "function") return null;
     try {
-      const sampleRate = context2.sampleRate || 44100;
+      const sampleRate = context3.sampleRate || 44100;
       const frameCount = Math.max(1, Math.floor(sampleRate * 1.25));
-      const buffer = context2.createBuffer(1, frameCount, sampleRate);
+      const buffer = context3.createBuffer(1, frameCount, sampleRate);
       const data = buffer.getChannelData(0);
       let previous = 0;
       for (let index = 0; index < frameCount; index++) {
@@ -1041,7 +1043,7 @@ var HarborLoop = (() => {
         previous = previous * 0.965 + white * 0.035;
         data[index] = previous * 2.4;
       }
-      const source = context2.createBufferSource();
+      const source = context3.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
       return source;
@@ -1095,18 +1097,18 @@ var HarborLoop = (() => {
       }
       if (!this.started) {
         try {
-          const context2 = this.context;
-          this.masterGain = context2.createGain();
-          this.engineGain = context2.createGain();
-          this.engineMidGain = context2.createGain();
-          this.engineHighGain = context2.createGain();
-          this.engineNoiseGain = context2.createGain();
-          this.engineFilter = context2.createBiquadFilter();
-          this.engineNoiseFilter = context2.createBiquadFilter();
-          this.engineLow = context2.createOscillator();
-          this.engineMid = context2.createOscillator();
-          this.engineHigh = context2.createOscillator();
-          this.engineNoise = createLoopingNoiseSource(context2);
+          const context3 = this.context;
+          this.masterGain = context3.createGain();
+          this.engineGain = context3.createGain();
+          this.engineMidGain = context3.createGain();
+          this.engineHighGain = context3.createGain();
+          this.engineNoiseGain = context3.createGain();
+          this.engineFilter = context3.createBiquadFilter();
+          this.engineNoiseFilter = context3.createBiquadFilter();
+          this.engineLow = context3.createOscillator();
+          this.engineMid = context3.createOscillator();
+          this.engineHigh = context3.createOscillator();
+          this.engineNoise = createLoopingNoiseSource(context3);
           setAudioParam(this.masterGain.gain, 0.46);
           setAudioParam(this.engineGain.gain, 1e-4);
           setAudioParam(this.engineMidGain.gain, 0.07);
@@ -1151,7 +1153,7 @@ var HarborLoop = (() => {
           }
           this.engineFilter.connect(this.engineGain);
           this.engineGain.connect(this.masterGain);
-          this.masterGain.connect(context2.destination);
+          this.masterGain.connect(context3.destination);
           safelyStartNode(this.engineLow);
           safelyStartNode(this.engineMid);
           safelyStartNode(this.engineHigh);
@@ -1167,12 +1169,12 @@ var HarborLoop = (() => {
     }
     addTone(type, duration, startFrequency, endFrequency, volume) {
       if (!this.ensureStarted()) return;
-      const context2 = this.context;
+      const context3 = this.context;
       const masterGain = this.masterGain;
-      if (!context2 || !masterGain) return;
+      if (!context3 || !masterGain) return;
       try {
-        const oscillator = context2.createOscillator();
-        const gain = context2.createGain();
+        const oscillator = context3.createOscillator();
+        const gain = context3.createGain();
         try {
           oscillator.type = type;
         } catch (error) {
@@ -1223,15 +1225,15 @@ var HarborLoop = (() => {
      */
     playCrash() {
       if (!this.ensureStarted()) return;
-      const context2 = this.context;
+      const context3 = this.context;
       const masterGain = this.masterGain;
-      if (!context2 || !masterGain) return;
+      if (!context3 || !masterGain) return;
       this.effectDuck = Math.max(this.effectDuck, 0.85);
       try {
-        const noise = createLoopingNoiseSource(context2);
+        const noise = createLoopingNoiseSource(context3);
         if (noise) {
-          const filter = context2.createBiquadFilter();
-          const gain = context2.createGain();
+          const filter = context3.createBiquadFilter();
+          const gain = context3.createGain();
           try {
             filter.type = "bandpass";
           } catch (error) {
@@ -1814,6 +1816,41 @@ var HarborLoop = (() => {
     return { stage: 2, difficulty: "master", target: Math.round(mode.stars[2] * 1.45) };
   }
 
+  // src/share.ts
+  var context = null;
+  function setShareContext(next) {
+    context = next;
+  }
+  function shareTitle() {
+    if (!context) return "Harbor Loop — 16 种模式的像素赛车";
+    if (context.stage > 0) {
+      return `每日挑战第 ${context.stage} 关我拿了 ${context.score}，你能过吗`;
+    }
+    const mode = modeById(context.modeId);
+    return `我在 ${mode.name}(${DIFFICULTY_LABEL[context.difficulty]}) 拿了 ${context.score} ${context.scoreUnit}，来超我`;
+  }
+  function shareQuery() {
+    if (!context) return "";
+    return `mode=${context.modeId}&difficulty=${context.difficulty}`;
+  }
+  function shareRun() {
+    const api2 = wx;
+    if (typeof api2.shareAppMessage !== "function") return;
+    try {
+      api2.shareAppMessage({ title: shareTitle(), query: shareQuery() });
+    } catch (error) {
+    }
+  }
+  function installShareMenu() {
+    var _a, _b;
+    const api2 = wx;
+    try {
+      (_a = api2.showShareMenu) == null ? void 0 : _a.call(api2, { withShareTicket: true });
+      (_b = api2.onShareAppMessage) == null ? void 0 : _b.call(api2, () => ({ title: shareTitle(), query: shareQuery() }));
+    } catch (error) {
+    }
+  }
+
   // src/cloud.ts
   var CLOUD_ENV = "";
   var initialised = false;
@@ -1870,7 +1907,7 @@ var HarborLoop = (() => {
   // src/leaderboard.ts
   var openDataContext = null;
   var openDataChecked = false;
-  function context() {
+  function context2() {
     if (openDataChecked) return openDataContext;
     openDataChecked = true;
     const api2 = wx;
@@ -1884,7 +1921,7 @@ var HarborLoop = (() => {
     return openDataContext;
   }
   function leaderboardAvailable() {
-    return context() !== null;
+    return context2() !== null;
   }
   function submitFriendScore(points) {
     const api2 = wx;
@@ -1900,7 +1937,7 @@ var HarborLoop = (() => {
     }
   }
   function requestFriendRanking(width, height, dpr) {
-    const ctx2 = context();
+    const ctx2 = context2();
     if (!ctx2) return;
     try {
       ctx2.canvas.width = Math.floor(width * dpr);
@@ -1910,7 +1947,7 @@ var HarborLoop = (() => {
     }
   }
   function sharedCanvas() {
-    const ctx2 = context();
+    const ctx2 = context2();
     return ctx2 ? ctx2.canvas : null;
   }
   var boards = /* @__PURE__ */ new Map();
@@ -2270,6 +2307,7 @@ var HarborLoop = (() => {
     daily: false,
     stage: 0,
     stageTarget: 0,
+    revives: 0,
     outcome: "running",
     progress: -1,
     banner: "",
@@ -2299,6 +2337,7 @@ var HarborLoop = (() => {
     run.daily = Boolean(daily);
     run.stage = daily ? daily.stage : 0;
     run.stageTarget = daily ? daily.target : 0;
+    run.revives = 0;
     run.outcome = "running";
     run.progress = -1;
     run.banner = "";
@@ -2326,6 +2365,27 @@ var HarborLoop = (() => {
   function runIsOver() {
     return run.outcome !== "running";
   }
+  var MAX_REVIVES = 1;
+  function reviveAvailable() {
+    if (run.revives >= MAX_REVIVES) return false;
+    return run.outcome === "wrecked" || run.outcome === "timeout";
+  }
+  function revive() {
+    if (!reviveAvailable()) return;
+    run.revives += 1;
+    run.outcome = "running";
+    run.banner = "REVIVED";
+    run.bannerTimer = 1.4;
+    if (Number.isFinite(run.timeRemaining) && run.timeRemaining <= 0.01) {
+      run.timeRemaining = REVIVE_SECONDS;
+    }
+    player.state = "RECOVERING";
+    player.stateElapsed = 0;
+    player.speed = 0;
+    player.invincible = 2.5;
+    resetClock();
+  }
+  var REVIVE_SECONDS = 15;
 
   // src/app.ts
   var app = {
@@ -2355,6 +2415,23 @@ var HarborLoop = (() => {
     const stage = dailyStage(plan, 2);
     startRun(plan.modeId, stage.difficulty, { seed: plan.seed, stage: 2, target: stage.target });
     app.screen = "PLAYING";
+  }
+  function shareForRevive() {
+    if (!reviveAvailable()) return false;
+    setShareContext({
+      modeId: run.modeId,
+      difficulty: run.difficulty,
+      score: run.score,
+      scoreUnit: modeById(run.modeId).scoreUnit,
+      stage: run.stage
+    });
+    shareRun();
+    revive();
+    app.screen = "PLAYING";
+    return true;
+  }
+  function canRevive() {
+    return reviveAvailable();
   }
   function retryRun() {
     const summary = app.result;
@@ -2390,6 +2467,13 @@ var HarborLoop = (() => {
       stageTarget: run.stageTarget,
       day: run.daily ? todayKey() : ""
     };
+    setShareContext({
+      modeId: run.modeId,
+      difficulty: run.difficulty,
+      score: run.score,
+      scoreUnit: mode.scoreUnit,
+      stage: run.stage
+    });
     if (run.daily) {
       submitGlobalScore("daily", run.difficulty, run.score, false, todayKey());
       submitFriendScore(careerPoints());
@@ -2494,15 +2578,15 @@ var HarborLoop = (() => {
     ctx.stroke();
     ctx.restore();
   }
-  function roundRect(context2, x, y, w, h, r) {
+  function roundRect(context3, x, y, w, h, r) {
     const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-    context2.beginPath();
-    context2.moveTo(x + radius, y);
-    context2.arcTo(x + w, y, x + w, y + h, radius);
-    context2.arcTo(x + w, y + h, x, y + h, radius);
-    context2.arcTo(x, y + h, x, y, radius);
-    context2.arcTo(x, y, x + w, y, radius);
-    context2.closePath();
+    context3.beginPath();
+    context3.moveTo(x + radius, y);
+    context3.arcTo(x + w, y, x + w, y + h, radius);
+    context3.arcTo(x + w, y + h, x, y + h, radius);
+    context3.arcTo(x, y + h, x, y, radius);
+    context3.arcTo(x, y, x + w, y, radius);
+    context3.closePath();
   }
 
   // src/render/hud.ts
@@ -2967,36 +3051,6 @@ var HarborLoop = (() => {
     toast.timer = 1.6;
   }
 
-  // src/share.ts
-  function shareTitle() {
-    const summary = app.result;
-    if (!summary) return "Harbor Loop — 16 种模式的像素赛车";
-    const mode = modeById(summary.modeId);
-    return `我在 ${mode.name}(${DIFFICULTY_LABEL[summary.difficulty]}) 拿了 ${summary.score} ${summary.scoreUnit}，来超我`;
-  }
-  function shareQuery() {
-    const summary = app.result;
-    if (!summary) return "";
-    return `mode=${summary.modeId}&difficulty=${summary.difficulty}`;
-  }
-  function shareRun() {
-    const api2 = wx;
-    if (typeof api2.shareAppMessage !== "function") return;
-    try {
-      api2.shareAppMessage({ title: shareTitle(), query: shareQuery() });
-    } catch (error) {
-    }
-  }
-  function installShareMenu() {
-    var _a, _b;
-    const api2 = wx;
-    try {
-      (_a = api2.showShareMenu) == null ? void 0 : _a.call(api2, { withShareTicket: true });
-      (_b = api2.onShareAppMessage) == null ? void 0 : _b.call(api2, () => ({ title: shareTitle(), query: shareQuery() }));
-    } catch (error) {
-    }
-  }
-
   // src/screens/result.ts
   var MARGIN2 = 20;
   var CONTENT_W = DESIGN_W - MARGIN2 * 2;
@@ -3086,7 +3140,11 @@ var HarborLoop = (() => {
       ctx.fillText(`BEST ${summary.best}`, DESIGN_W / 2, SCORE_CARD.y + 192);
     }
     drawRankingPanel();
-    chunkyButton(RETRY, "再来一次", "primary", 18);
+    if (canRevive()) {
+      chunkyButton(RETRY, "分享复活 · 继续这一局", "good", 16);
+    } else {
+      chunkyButton(RETRY, "再来一次", "primary", 18);
+    }
     chunkyButton(SHARE, "分享成绩", "good", 15);
     chunkyButton(MENU, "选择模式", "plain", 15);
   }
@@ -3189,7 +3247,7 @@ var HarborLoop = (() => {
       return true;
     }
     if (hits(RETRY, x, y)) {
-      retryRun();
+      if (!shareForRevive()) retryRun();
       return true;
     }
     if (hits(MENU, x, y)) {

@@ -132,7 +132,7 @@ scheduleFrame(frame);
  * poking at state from the WeChat devtools console.
  */
 export { player, aiCars, inputState };
-export { app, startMode, openMenu, retryRun, startDaily } from './app';
+export { app, startMode, openMenu, retryRun, startDaily, shareForRevive, canRevive } from './app';
 export { run } from './run';
 export { trackLength } from './track';
 export { MODES } from './modes';

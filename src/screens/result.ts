@@ -1,6 +1,6 @@
 /** Result screen: score card, friend ranking and the three actions. */
 
-import { app, openMenu, retryRun } from '../app';
+import { app, canRevive, openMenu, retryRun, shareForRevive } from '../app';
 import { DIFFICULTY_PROFILES } from '../difficulty';
 import {
   globalBoard,
@@ -138,7 +138,12 @@ export function drawResult(): void {
 
   drawRankingPanel();
 
-  chunkyButton(RETRY, '再来一次', 'primary', 18);
+  // A revive is worth more than a restart, so it takes the primary slot.
+  if (canRevive()) {
+    chunkyButton(RETRY, '分享复活 · 继续这一局', 'good', 16);
+  } else {
+    chunkyButton(RETRY, '再来一次', 'primary', 18);
+  }
   chunkyButton(SHARE, '分享成绩', 'good', 15);
   chunkyButton(MENU, '选择模式', 'plain', 15);
 }
@@ -265,7 +270,8 @@ export function handleResultTap(x: number, y: number): boolean {
     return true;
   }
   if (hits(RETRY, x, y)) {
-    retryRun();
+    // Same button, different promise depending on whether a revive is left.
+    if (!shareForRevive()) retryRun();
     return true;
   }
   if (hits(MENU, x, y)) {

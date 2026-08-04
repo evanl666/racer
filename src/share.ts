@@ -5,9 +5,9 @@
  * "beat this", not "try this game". Outside WeChat this is a no-op.
  */
 
-import { app } from './app';
 import { DIFFICULTY_LABEL } from './difficulty';
 import { modeById } from './modes';
+import type { Difficulty, ModeId } from './modes/types';
 
 type ShareOptions = {
   title: string;
@@ -15,18 +15,37 @@ type ShareOptions = {
   imageUrl?: string;
 };
 
+/**
+ * What the next share should say. app.ts keeps this current rather than share.ts
+ * importing app, which would make the two modules import each other.
+ */
+export interface ShareContext {
+  modeId: ModeId;
+  difficulty: Difficulty;
+  score: number;
+  scoreUnit: string;
+  stage: number;
+}
+
+let context: ShareContext | null = null;
+
+export function setShareContext(next: ShareContext | null): void {
+  context = next;
+}
+
 function shareTitle(): string {
-  const summary = app.result;
-  if (!summary) return 'Harbor Loop — 16 种模式的像素赛车';
-  const mode = modeById(summary.modeId);
-  return `我在 ${mode.name}(${DIFFICULTY_LABEL[summary.difficulty]}) 拿了 ${summary.score} ${summary.scoreUnit}，来超我`;
+  if (!context) return 'Harbor Loop — 16 种模式的像素赛车';
+  if (context.stage > 0) {
+    return `每日挑战第 ${context.stage} 关我拿了 ${context.score}，你能过吗`;
+  }
+  const mode = modeById(context.modeId);
+  return `我在 ${mode.name}(${DIFFICULTY_LABEL[context.difficulty]}) 拿了 ${context.score} ${context.scoreUnit}，来超我`;
 }
 
 function shareQuery(): string {
-  const summary = app.result;
-  if (!summary) return '';
+  if (!context) return '';
   // Lets a tapped card open straight into the mode that was shared.
-  return `mode=${summary.modeId}&difficulty=${summary.difficulty}`;
+  return `mode=${context.modeId}&difficulty=${context.difficulty}`;
 }
 
 export function shareRun(): void {

@@ -23,6 +23,7 @@ export const run: RunState = {
   daily: false,
   stage: 0,
   stageTarget: 0,
+  revives: 0,
   outcome: 'running',
   progress: -1,
   banner: '',
@@ -66,6 +67,7 @@ export function startRun(modeId: ModeId, difficulty: Difficulty, daily?: DailyRu
   run.daily = Boolean(daily);
   run.stage = daily ? daily.stage : 0;
   run.stageTarget = daily ? daily.target : 0;
+  run.revives = 0;
   run.outcome = 'running';
   run.progress = -1;
   run.banner = '';
@@ -107,3 +109,40 @@ export function runIsOver(): boolean {
 export function runProducedScore(): boolean {
   return run.elapsed > 1 && (run.score > 0 || player.totalPasses > 0);
 }
+
+
+/** One revive per run: enough to matter, not enough to make the score meaningless. */
+export const MAX_REVIVES = 1;
+
+export function reviveAvailable(): boolean {
+  if (run.revives >= MAX_REVIVES) return false;
+  // Clearing the objective is not something to be rescued from.
+  return run.outcome === 'wrecked' || run.outcome === 'timeout';
+}
+
+/**
+ * Puts the player back on track mid-run. Timed modes also get time back, or a
+ * revive on a expired clock would be worth nothing.
+ */
+export function revive(): void {
+  if (!reviveAvailable()) return;
+
+  run.revives += 1;
+  run.outcome = 'running';
+  run.banner = 'REVIVED';
+  run.bannerTimer = 1.4;
+
+  if (Number.isFinite(run.timeRemaining) && run.timeRemaining <= 0.01) {
+    run.timeRemaining = REVIVE_SECONDS;
+  }
+
+  player.state = 'RECOVERING';
+  player.stateElapsed = 0;
+  player.speed = 0;
+  // Long enough to get out of whatever killed you.
+  player.invincible = 2.5;
+
+  resetClock();
+}
+
+const REVIVE_SECONDS = 15;

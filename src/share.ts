@@ -8,6 +8,7 @@
 import { DIFFICULTY_LABEL } from './difficulty';
 import { modeById } from './modes';
 import type { Difficulty, ModeId } from './modes/types';
+import { renderShareCard } from './shareCard';
 
 type ShareOptions = {
   title: string;
@@ -25,6 +26,7 @@ export interface ShareContext {
   score: number;
   scoreUnit: string;
   stage: number;
+  stars: number;
 }
 
 let context: ShareContext | null = null;
@@ -48,11 +50,26 @@ function shareQuery(): string {
   return `mode=${context.modeId}&difficulty=${context.difficulty}`;
 }
 
+/** Draws the score card, if the platform can turn a canvas into a file. */
+function shareImage(): string | undefined {
+  if (!context) return undefined;
+  const path = renderShareCard({
+    modeId: context.modeId,
+    difficulty: context.difficulty,
+    difficultyLabel: DIFFICULTY_LABEL[context.difficulty],
+    score: context.score,
+    scoreUnit: context.scoreUnit,
+    stars: context.stars,
+    stage: context.stage
+  });
+  return path ?? undefined;
+}
+
 export function shareRun(): void {
   const api = wx as unknown as { shareAppMessage?(options: ShareOptions): void };
   if (typeof api.shareAppMessage !== 'function') return;
   try {
-    api.shareAppMessage({ title: shareTitle(), query: shareQuery() });
+    api.shareAppMessage({ title: shareTitle(), query: shareQuery(), imageUrl: shareImage() });
   } catch (error) {
     /* sharing is optional */
   }
@@ -66,7 +83,7 @@ export function installShareMenu(): void {
   };
   try {
     api.showShareMenu?.({ withShareTicket: true });
-    api.onShareAppMessage?.(() => ({ title: shareTitle(), query: shareQuery() }));
+    api.onShareAppMessage?.(() => ({ title: shareTitle(), query: shareQuery(), imageUrl: shareImage() }));
   } catch (error) {
     /* sharing is optional */
   }

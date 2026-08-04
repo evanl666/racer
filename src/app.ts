@@ -6,7 +6,7 @@ import { submitFriendScore, submitGlobalScore } from './leaderboard';
 import { MODES } from './modes';
 import type { Difficulty, ModeId, RunOutcome } from './modes/types';
 import { modeById } from './modes';
-import { modeUnlocked } from './progress';
+import { modeUnlocked, starsFor } from './progress';
 import { reviveAvailable, revive, run, startRun } from './run';
 import { bestScore, careerPoints, submitScore } from './storage';
 
@@ -79,7 +79,8 @@ export function shareForRevive(): boolean {
     difficulty: run.difficulty,
     score: run.score,
     scoreUnit: modeById(run.modeId).scoreUnit,
-    stage: run.stage
+    stage: run.stage,
+    stars: starsFor(run.modeId, run.difficulty)
   });
   shareRun();
   revive();
@@ -144,7 +145,8 @@ export function finishRun(): void {
     difficulty: run.difficulty,
     score: run.score,
     scoreUnit: mode.scoreUnit,
-    stage: run.stage
+    stage: run.stage,
+    stars: starsFor(run.modeId, run.difficulty)
   });
 
   if (run.daily) {

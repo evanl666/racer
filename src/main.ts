@@ -141,6 +141,7 @@ export { debugPointerCount } from './input';
 export { feelState } from './feel';
 export { activeParticles } from './render/particles';
 export { dailyPlan, dailyStage, todayKey } from './daily';
+export { renderShareCard } from './shareCard';
 export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';

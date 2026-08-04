@@ -61,6 +61,7 @@ var HarborLoop = (() => {
     openMenu: () => openMenu,
     player: () => player,
     random: () => random,
+    renderShareCard: () => renderShareCard,
     retryRun: () => retryRun,
     run: () => run,
     setSeed: () => setSeed,
@@ -1816,6 +1817,194 @@ var HarborLoop = (() => {
     return { stage: 2, difficulty: "master", target: Math.round(mode.stars[2] * 1.45) };
   }
 
+  // src/render/icons.ts
+  function drawStar(cx, cy, radius, color, filled) {
+    const inner = radius * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? radius : inner;
+      const angle = -Math.PI / 2 + i * Math.PI / 5;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    if (filled) {
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+  }
+  function drawLock(cx, cy, size, color) {
+    const bodyW = size;
+    const bodyH = size * 0.78;
+    const bodyY = cy - bodyH / 2 + size * 0.16;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.4, size * 0.16);
+    ctx.beginPath();
+    ctx.arc(cx, bodyY, bodyW * 0.32, Math.PI, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.rect(cx - bodyW / 2, bodyY, bodyW, bodyH);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // src/theme.ts
+  var COLORS = {
+    water: "#163D52",
+    waterDeep: "#102F42",
+    waterLine: "rgba(255,255,255,0.045)",
+    land: "#A8BE79",
+    landLight: "#C0CF91",
+    landDark: "#7F995F",
+    roadShadow: "rgba(5,14,20,0.48)",
+    roadEdge: "#20282D",
+    curbLight: "#F1E9D7",
+    curbRed: "#D86A59",
+    road: "#626D73",
+    roadHighlight: "rgba(255,255,255,0.045)",
+    lane: "rgba(246,242,226,0.55)",
+    player: "#F05A47",
+    playerLight: "#FF8D73",
+    playerStripe: "#FFF4D8",
+    window: "#C8EDF1",
+    ai: "#161B1E",
+    aiLight: "#31383C",
+    aiWindow: "#69777D",
+    text: "#F7F4EA",
+    muted: "rgba(247,244,234,0.66)",
+    accent: "#57D5CB",
+    accentLight: "#C5FFF7",
+    button: "rgba(8,17,25,0.82)",
+    buttonActive: "rgba(87,213,203,0.30)",
+    buttonDisabled: "rgba(8,17,25,0.42)",
+    buttonEdge: "rgba(247,244,234,0.28)"
+  };
+  var UI = {
+    ground: "#12384E",
+    groundDeep: "#0A2233",
+    groundStripe: "rgba(255,255,255,0.028)",
+    card: "#FFF6E4",
+    cardAlt: "#FFEDCC",
+    ink: "#22323F",
+    inkSoft: "#6C7C88",
+    outline: "#152532",
+    primary: "#FFB43C",
+    primaryDeep: "#E38C15",
+    good: "#5FCF80",
+    bad: "#FF6B5E",
+    chip: "#1B3F55"
+  };
+
+  // src/shareCard.ts
+  var CARD_W = 500;
+  var CARD_H = 400;
+  var cardCanvas = null;
+  var cardCtx = null;
+  function ensureCanvas() {
+    if (cardCanvas && cardCtx) return true;
+    cardCanvas = createOffscreenCanvas(CARD_W, CARD_H);
+    cardCtx = cardCanvas ? cardCanvas.getContext("2d") : null;
+    return Boolean(cardCanvas && cardCtx);
+  }
+  function drawTrackSketch(target, cx, cy, height) {
+    if (centerPath.length < 2) return;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const point of centerPath) {
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+    const scale2 = height / Math.max(1, maxY - minY);
+    const originX = cx - (minX + maxX) / 2 * scale2;
+    const originY = cy - (minY + maxY) / 2 * scale2;
+    target.save();
+    target.beginPath();
+    for (let i = 0; i < centerPath.length; i++) {
+      const x = originX + centerPath[i].x * scale2;
+      const y = originY + centerPath[i].y * scale2;
+      if (i === 0) target.moveTo(x, y);
+      else target.lineTo(x, y);
+    }
+    target.closePath();
+    target.strokeStyle = "rgba(255,246,228,0.16)";
+    target.lineWidth = 9;
+    target.lineJoin = "round";
+    target.stroke();
+    target.restore();
+  }
+  function renderShareCard(data) {
+    if (!ensureCanvas() || !cardCanvas || !cardCtx) return null;
+    const target = cardCtx;
+    target.setTransform(1, 0, 0, 1, 0, 0);
+    target.fillStyle = UI.ground;
+    target.fillRect(0, 0, CARD_W, CARD_H);
+    target.save();
+    target.fillStyle = "rgba(255,255,255,0.03)";
+    for (let i = -CARD_H; i < CARD_W + CARD_H; i += 46) {
+      target.beginPath();
+      target.moveTo(i, 0);
+      target.lineTo(i + 20, 0);
+      target.lineTo(i + 20 + CARD_H, CARD_H);
+      target.lineTo(i + CARD_H, CARD_H);
+      target.closePath();
+      target.fill();
+    }
+    target.restore();
+    drawTrackSketch(target, CARD_W - 108, CARD_H / 2, CARD_H * 0.78);
+    withRenderTarget(target, () => {
+      const mode = modeById(data.modeId);
+      target.textAlign = "left";
+      target.fillStyle = UI.primary;
+      target.font = "900 20px sans-serif";
+      target.fillText("HARBOR LOOP", 40, 56);
+      target.fillStyle = UI.card;
+      target.font = "900 34px sans-serif";
+      target.fillText(data.stage > 0 ? `每日挑战 第 ${data.stage} 关` : mode.name, 40, 108);
+      target.fillStyle = "rgba(255,246,228,0.6)";
+      target.font = "700 15px sans-serif";
+      target.fillText(data.difficultyLabel, 40, 134);
+      target.fillStyle = UI.card;
+      target.font = "900 92px monospace";
+      target.fillText(String(data.score), 38, 236);
+      target.fillStyle = "rgba(255,246,228,0.6)";
+      target.font = "900 16px sans-serif";
+      target.fillText(data.scoreUnit, 42, 264);
+      for (let i = 0; i < 3; i++) {
+        drawStar(56 + i * 40, 310, 16, i < data.stars ? UI.primary : "rgba(255,246,228,0.18)", i < data.stars);
+      }
+      target.fillStyle = "rgba(255,246,228,0.45)";
+      target.font = "700 14px sans-serif";
+      target.fillText("来超我", 40, 364);
+    });
+    const canvas2 = cardCanvas;
+    if (typeof canvas2.toTempFilePathSync !== "function") return null;
+    try {
+      return canvas2.toTempFilePathSync({
+        x: 0,
+        y: 0,
+        width: CARD_W,
+        height: CARD_H,
+        destWidth: CARD_W,
+        destHeight: CARD_H,
+        fileType: "png"
+      });
+    } catch (error) {
+      return null;
+    }
+  }
+
   // src/share.ts
   var context = null;
   function setShareContext(next) {
@@ -1833,11 +2022,24 @@ var HarborLoop = (() => {
     if (!context) return "";
     return `mode=${context.modeId}&difficulty=${context.difficulty}`;
   }
+  function shareImage() {
+    if (!context) return void 0;
+    const path = renderShareCard({
+      modeId: context.modeId,
+      difficulty: context.difficulty,
+      difficultyLabel: DIFFICULTY_LABEL[context.difficulty],
+      score: context.score,
+      scoreUnit: context.scoreUnit,
+      stars: context.stars,
+      stage: context.stage
+    });
+    return path != null ? path : void 0;
+  }
   function shareRun() {
     const api2 = wx;
     if (typeof api2.shareAppMessage !== "function") return;
     try {
-      api2.shareAppMessage({ title: shareTitle(), query: shareQuery() });
+      api2.shareAppMessage({ title: shareTitle(), query: shareQuery(), imageUrl: shareImage() });
     } catch (error) {
     }
   }
@@ -1846,7 +2048,7 @@ var HarborLoop = (() => {
     const api2 = wx;
     try {
       (_a = api2.showShareMenu) == null ? void 0 : _a.call(api2, { withShareTicket: true });
-      (_b = api2.onShareAppMessage) == null ? void 0 : _b.call(api2, () => ({ title: shareTitle(), query: shareQuery() }));
+      (_b = api2.onShareAppMessage) == null ? void 0 : _b.call(api2, () => ({ title: shareTitle(), query: shareQuery(), imageUrl: shareImage() }));
     } catch (error) {
     }
   }
@@ -2423,7 +2625,8 @@ var HarborLoop = (() => {
       difficulty: run.difficulty,
       score: run.score,
       scoreUnit: modeById(run.modeId).scoreUnit,
-      stage: run.stage
+      stage: run.stage,
+      stars: starsFor(run.modeId, run.difficulty)
     });
     shareRun();
     revive();
@@ -2472,7 +2675,8 @@ var HarborLoop = (() => {
       difficulty: run.difficulty,
       score: run.score,
       scoreUnit: mode.scoreUnit,
-      stage: run.stage
+      stage: run.stage,
+      stars: starsFor(run.modeId, run.difficulty)
     });
     if (run.daily) {
       submitGlobalScore("daily", run.difficulty, run.score, false, todayKey());
@@ -2515,53 +2719,6 @@ var HarborLoop = (() => {
     if (id === "throttle") return;
     laneButtonFlash[id] = CONTROL_FLASH_DURATION;
   }
-
-  // src/theme.ts
-  var COLORS = {
-    water: "#163D52",
-    waterDeep: "#102F42",
-    waterLine: "rgba(255,255,255,0.045)",
-    land: "#A8BE79",
-    landLight: "#C0CF91",
-    landDark: "#7F995F",
-    roadShadow: "rgba(5,14,20,0.48)",
-    roadEdge: "#20282D",
-    curbLight: "#F1E9D7",
-    curbRed: "#D86A59",
-    road: "#626D73",
-    roadHighlight: "rgba(255,255,255,0.045)",
-    lane: "rgba(246,242,226,0.55)",
-    player: "#F05A47",
-    playerLight: "#FF8D73",
-    playerStripe: "#FFF4D8",
-    window: "#C8EDF1",
-    ai: "#161B1E",
-    aiLight: "#31383C",
-    aiWindow: "#69777D",
-    text: "#F7F4EA",
-    muted: "rgba(247,244,234,0.66)",
-    accent: "#57D5CB",
-    accentLight: "#C5FFF7",
-    button: "rgba(8,17,25,0.82)",
-    buttonActive: "rgba(87,213,203,0.30)",
-    buttonDisabled: "rgba(8,17,25,0.42)",
-    buttonEdge: "rgba(247,244,234,0.28)"
-  };
-  var UI = {
-    ground: "#12384E",
-    groundDeep: "#0A2233",
-    groundStripe: "rgba(255,255,255,0.028)",
-    card: "#FFF6E4",
-    cardAlt: "#FFEDCC",
-    ink: "#22323F",
-    inkSoft: "#6C7C88",
-    outline: "#152532",
-    primary: "#FFB43C",
-    primaryDeep: "#E38C15",
-    good: "#5FCF80",
-    bad: "#FF6B5E",
-    chip: "#1B3F55"
-  };
 
   // src/render/primitives.ts
   function strokeClosedPath(points, width, color, dash = []) {
@@ -2730,45 +2887,6 @@ var HarborLoop = (() => {
         ctx.fillText("GAS", cx, cy + 21);
       }
     }
-  }
-
-  // src/render/icons.ts
-  function drawStar(cx, cy, radius, color, filled) {
-    const inner = radius * 0.45;
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const r = i % 2 === 0 ? radius : inner;
-      const angle = -Math.PI / 2 + i * Math.PI / 5;
-      const x = cx + Math.cos(angle) * r;
-      const y = cy + Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    if (filled) {
-      ctx.fillStyle = color;
-      ctx.fill();
-    } else {
-      ctx.lineWidth = 1.4;
-      ctx.strokeStyle = color;
-      ctx.stroke();
-    }
-  }
-  function drawLock(cx, cy, size, color) {
-    const bodyW = size;
-    const bodyH = size * 0.78;
-    const bodyY = cy - bodyH / 2 + size * 0.16;
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1.4, size * 0.16);
-    ctx.beginPath();
-    ctx.arc(cx, bodyY, bodyW * 0.32, Math.PI, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.rect(cx - bodyW / 2, bodyY, bodyW, bodyH);
-    ctx.fill();
-    ctx.restore();
   }
 
   // src/render/ui.ts

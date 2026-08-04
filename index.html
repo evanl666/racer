@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Harbor Loop V0.7.2</title>
+<title>Harbor Loop V0.9.4</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#101b24}canvas{display:block;margin:auto;height:100vh;max-width:100vw;touch-action:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#101b24}canvas{display:block;margin:auto;height:100vh;max-width:100vw;touch-action:none;outline:none}
 </style>
 </head>
 <body>
@@ -14,7 +14,14 @@ window.wx={
   createCanvas(){const c=document.createElement('canvas');document.body.appendChild(c);return c;},
   getWindowInfo(){return {windowWidth:Math.min(innerWidth,462),windowHeight:innerHeight,pixelRatio:devicePixelRatio||1};},
   getSystemInfoSync(){return this.getWindowInfo();},
-  vibrateShort(){}
+  vibrateShort(){},
+  createWebAudioContext(){
+    const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContextClass) throw new Error('WebAudio is not supported');
+    return new AudioContextClass();
+  },
+  onHide(){},
+  onShow(){}
 };
 </script>
 <script src="game.js"></script>

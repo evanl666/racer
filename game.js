@@ -40,6 +40,7 @@ var HarborLoop = (() => {
   var main_exports = {};
   __export(main_exports, {
     MODES: () => MODES,
+    RELEASED_MODES: () => RELEASED_MODES,
     TRACKS: () => TRACKS,
     activeParticles: () => activeParticles,
     aiCars: () => aiCars,
@@ -48,7 +49,12 @@ var HarborLoop = (() => {
     bestScore: () => bestScore,
     canRevive: () => canRevive,
     careerPoints: () => careerPoints,
+    clearCountdown: () => clearCountdown,
     clearSeed: () => clearSeed,
+    countdownActive: () => countdownActive,
+    countdownRemaining: () => countdownRemaining,
+    cruiseSpeedForCombo: () => cruiseSpeedForCombo,
+    currentCruiseSpeed: () => currentCruiseSpeed,
     currentStreak: () => currentStreak,
     dailyPlan: () => dailyPlan,
     dailyStage: () => dailyStage,
@@ -83,13 +89,19 @@ var HarborLoop = (() => {
   });
 
   // src/config.ts
-  var LANE_COUNT = 6;
-  var LANE_GAP = 8.2;
+  var LANE_COUNT = 5;
+  var LANE_GAP = 9.9;
   var ROAD_HALF_WIDTH = 27;
   var PLAYER_CRUISE_BASE_SPEED = 125;
-  var SPEED_TIER_CRUISE = [125, 180, 240, 305, 365, 420, 470, 515, 555, 590, 620];
-  var SPEED_TIER_THROTTLE = [175, 240, 310, 380, 445, 505, 555, 600, 640, 675, 705];
-  var PLAYER_MAX_SPEED = SPEED_TIER_THROTTLE[SPEED_TIER_THROTTLE.length - 1];
+  var SPEED_BANDS = [
+    [10, 6],
+    [15, 3],
+    [25, 1.5],
+    [Infinity, 0.55]
+  ];
+  var CRUISE_SPEED_CAP = 380;
+  var THROTTLE_MARGIN = 60;
+  var PLAYER_MAX_SPEED = CRUISE_SPEED_CAP + THROTTLE_MARGIN;
   var PLAYER_ACCELERATION = 112;
   var PLAYER_TIER_ACCELERATION = 165;
   var PLAYER_COAST_DECELERATION = 42;
@@ -525,7 +537,10 @@ var HarborLoop = (() => {
     collisionCount: 0,
     fireball: 0,
     heat: 0,
-    travelled: 0
+    travelled: 0,
+    trail: [],
+    previousHeading: 0,
+    cornering: 0
   };
   var aiCars = [];
   function resetGame() {
@@ -551,6 +566,9 @@ var HarborLoop = (() => {
     player.fireball = 0;
     player.heat = 0;
     player.travelled = 0;
+    player.trail.length = 0;
+    player.previousHeading = 0;
+    player.cornering = 0;
     aiCars = buildBlueprints(tuning.profile.carCount).map((blueprint, index) => {
       const distance = arc.total * blueprint.fraction;
       const baseSpeed = blueprint.speed * tuning.traffic;
@@ -581,13 +599,24 @@ var HarborLoop = (() => {
     return PLAYER_CRUISE_BASE_SPEED * tuning.player;
   }
   function currentSpeedTier(combo = player.combo) {
-    return Math.min(SPEED_TIER_CRUISE.length - 1, Math.floor(Math.max(0, combo) / 10));
+    return Math.min(10, Math.floor(Math.max(0, combo) / 10));
+  }
+  function cruiseSpeedForCombo(combo) {
+    let speed = PLAYER_CRUISE_BASE_SPEED;
+    let remaining = Math.max(0, combo);
+    for (const [count, step] of SPEED_BANDS) {
+      const taken = Math.min(remaining, count);
+      speed += taken * step;
+      remaining -= taken;
+      if (remaining <= 0) break;
+    }
+    return Math.min(CRUISE_SPEED_CAP, speed);
   }
   function currentCruiseSpeed() {
-    return SPEED_TIER_CRUISE[currentSpeedTier()] * tuning.player;
+    return cruiseSpeedForCombo(player.combo) * tuning.player;
   }
   function currentThrottleMaxSpeed() {
-    return SPEED_TIER_THROTTLE[currentSpeedTier()] * tuning.player;
+    return (cruiseSpeedForCombo(player.combo) + THROTTLE_MARGIN) * tuning.player;
   }
   function currentTargetSpeed() {
     return inputState.throttle ? currentThrottleMaxSpeed() : currentCruiseSpeed();
@@ -595,6 +624,7 @@ var HarborLoop = (() => {
   function engineSnapshot() {
     return {
       tier: currentSpeedTier(),
+      cornering: player.cornering,
       throttle: inputState.throttle,
       speed: player.speed,
       cruiseSpeed: currentCruiseSpeed(),
@@ -853,6 +883,9 @@ var HarborLoop = (() => {
     }
   }
   var TIER_RPM_MULTIPLIER = [1, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 1.415, 1.445, 1.47];
+  function masterGainForTyres(master) {
+    return master;
+  }
   var MAX_VOICES = 12;
   var MASTER_VOLUME = 0.46;
   var AudioEngine = class {
@@ -871,6 +904,14 @@ var HarborLoop = (() => {
       this.engineNoise = null;
       this.engineNoiseFilter = null;
       this.engineNoiseGain = null;
+      /** Sub-octave sine: the body the three-layer engine was missing. */
+      this.engineBody = null;
+      this.engineBodyGain = null;
+      /** Tyre scrub, a separate filtered noise voice driven by cornering load. */
+      this.tyreNoise = null;
+      this.tyreFilter = null;
+      this.tyreGain = null;
+      this.smoothCornering = 0;
       this.muted = false;
       this.smoothEngineFrequency = 48;
       this.smoothEngineVolume = 0;
@@ -912,11 +953,29 @@ var HarborLoop = (() => {
           this.engineMid = context3.createOscillator();
           this.engineHigh = context3.createOscillator();
           this.engineNoise = createLoopingNoiseSource(context3);
+          this.engineBody = context3.createOscillator();
+          this.engineBodyGain = context3.createGain();
+          this.tyreNoise = createLoopingNoiseSource(context3);
+          this.tyreFilter = context3.createBiquadFilter();
+          this.tyreGain = context3.createGain();
           setAudioParam(this.masterGain.gain, this.muted ? 0 : MASTER_VOLUME);
           setAudioParam(this.engineGain.gain, 1e-4);
           setAudioParam(this.engineMidGain.gain, 0.07);
           setAudioParam(this.engineHighGain.gain, 0.018);
           setAudioParam(this.engineNoiseGain.gain, 1e-4);
+          setAudioParam(this.engineBodyGain.gain, 0.055);
+          setAudioParam(this.tyreGain.gain, 1e-4);
+          try {
+            this.tyreFilter.type = "bandpass";
+          } catch (error) {
+          }
+          setAudioParam(this.tyreFilter.frequency, 2400);
+          setAudioParam(this.tyreFilter.Q, 1.5);
+          try {
+            this.engineBody.type = "sine";
+          } catch (error) {
+          }
+          setAudioParam(this.engineBody.frequency, this.smoothEngineFrequency * 0.5);
           try {
             this.engineFilter.type = "lowpass";
           } catch (error) {
@@ -954,6 +1013,13 @@ var HarborLoop = (() => {
             this.engineNoiseFilter.connect(this.engineNoiseGain);
             this.engineNoiseGain.connect(this.engineGain);
           }
+          this.engineBody.connect(this.engineBodyGain);
+          this.engineBodyGain.connect(this.engineGain);
+          if (this.tyreNoise) {
+            this.tyreNoise.connect(this.tyreFilter);
+            this.tyreFilter.connect(this.tyreGain);
+            this.tyreGain.connect(masterGainForTyres(this.masterGain));
+          }
           this.engineFilter.connect(this.engineGain);
           this.engineGain.connect(this.masterGain);
           this.masterGain.connect(context3.destination);
@@ -961,6 +1027,8 @@ var HarborLoop = (() => {
           safelyStartNode(this.engineMid);
           safelyStartNode(this.engineHigh);
           safelyStartNode(this.engineNoise);
+          safelyStartNode(this.engineBody);
+          safelyStartNode(this.tyreNoise);
           this.started = true;
         } catch (error) {
           this.disabled = true;
@@ -1086,12 +1154,13 @@ var HarborLoop = (() => {
           filter.connect(gain);
           gain.connect(masterGain);
           safelyStartNode(noise);
-          this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.3 });
+          this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.55, volume: 0.34 });
         }
       } catch (error) {
       }
-      this.addTone("triangle", 0.3, 116, 44, 0.34);
-      this.addTone("sawtooth", 0.16, 220, 70, 0.12);
+      this.addTone("sine", 0.42, 128, 34, 0.4);
+      this.addTone("triangle", 0.26, 320, 96, 0.16);
+      this.addTone("sawtooth", 0.13, 900, 240, 0.07);
     }
     /** Close call: a short upward whoosh, distinct from the overtake blip. */
     playCloseCall() {
@@ -1107,7 +1176,7 @@ var HarborLoop = (() => {
       this.addTone("triangle", 0.11, start * 1.95, end * 1.74, 0.018);
     }
     update(dt, snapshot) {
-      var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
       if (!this.started || this.disabled) return;
       const tierMultiplier = TIER_RPM_MULTIPLIER[snapshot.tier];
       const throttleTarget = snapshot.throttle && snapshot.state !== "CRASHED" ? 1 : 0;
@@ -1144,6 +1213,12 @@ var HarborLoop = (() => {
       setAudioParam((_g = this.engineFilter) == null ? void 0 : _g.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
       setAudioParam((_h = this.engineNoiseFilter) == null ? void 0 : _h.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
       setAudioParam((_i = this.engineNoiseGain) == null ? void 0 : _i.gain, (3e-3 + revAmount * 0.01 + speedRatio * 9e-3) * duck);
+      setAudioParam((_j = this.engineBody) == null ? void 0 : _j.frequency, this.smoothEngineFrequency * 0.503);
+      setAudioParam((_k = this.engineBodyGain) == null ? void 0 : _k.gain, (0.05 + speedRatio * 0.03) * duck);
+      const corneringTarget = snapshot.state === "CRASHED" ? 0 : snapshot.cornering * speedRatio;
+      this.smoothCornering += (corneringTarget - this.smoothCornering) * (1 - Math.exp(-dt * 7));
+      setAudioParam((_l = this.tyreFilter) == null ? void 0 : _l.frequency, 1500 + this.smoothCornering * 2600);
+      setAudioParam((_m = this.tyreGain) == null ? void 0 : _m.gain, Math.max(1e-4, this.smoothCornering * 0.055 * duck));
       for (let index = this.transients.length - 1; index >= 0; index--) {
         const transient = this.transients[index];
         transient.elapsed += dt;
@@ -1278,26 +1353,22 @@ var HarborLoop = (() => {
   };
 
   // src/modes/comboRacers.ts
-  var TARGET_COMBO = 40;
   var comboRacers = {
     id: "combo-racers",
     name: "COMBO RACERS",
-    rule: `限时 60 秒 · Combo 冲到 ${TARGET_COMBO} · 撞车清零`,
+    rule: "限时 60 秒 · 看你能连超多少辆 · 撞车断连击",
     timeLimit: 60,
     scoreUnit: "COMBO",
     trafficScale: 1,
     trackId: "long-bay",
     stars: [12, 26, 40],
     update(_dt, run2) {
-      if (player.combo > run2.score) run2.score = player.combo;
-      run2.progress = Math.min(1, player.combo / TARGET_COMBO);
+      run2.score = player.bestCombo;
+      run2.progress = -1;
     },
     onCrash(run2) {
       run2.banner = "COMBO LOST";
       run2.bannerTimer = 1.1;
-    },
-    cleared(run2) {
-      return run2.score >= TARGET_COMBO;
     }
   };
 
@@ -1393,6 +1464,34 @@ var HarborLoop = (() => {
       run2.bannerTimer = 1;
     }
   };
+
+  // src/countdown.ts
+  var COUNT_FROM = 3;
+  var state2 = {
+    remaining: 0
+  };
+  function beginCountdown(seconds = COUNT_FROM) {
+    state2.remaining = seconds;
+  }
+  function countdownActive() {
+    return state2.remaining > 0;
+  }
+  function updateCountdown(dt) {
+    if (state2.remaining <= 0) return false;
+    state2.remaining = Math.max(0, state2.remaining - dt);
+    return true;
+  }
+  function countdownRemaining() {
+    return state2.remaining;
+  }
+  function countdownLabel() {
+    if (state2.remaining <= 0) return "";
+    const step = Math.ceil(state2.remaining);
+    return step > 0 ? String(step) : "GO";
+  }
+  function clearCountdown() {
+    state2.remaining = 0;
+  }
 
   // src/storage.ts
   var STORAGE_KEY = "harbor-loop-bests-v1";
@@ -1547,7 +1646,7 @@ var HarborLoop = (() => {
 
   // src/onboarding.ts
   var MAX_SECONDS = 12;
-  var state2 = {
+  var state3 = {
     active: false,
     usedLane: false,
     usedThrottle: false,
@@ -1555,42 +1654,42 @@ var HarborLoop = (() => {
   };
   function beginOnboarding() {
     if (loadOnboarded()) {
-      state2.active = false;
+      state3.active = false;
       return;
     }
-    state2.active = true;
-    state2.usedLane = false;
-    state2.usedThrottle = false;
-    state2.elapsed = 0;
+    state3.active = true;
+    state3.usedLane = false;
+    state3.usedThrottle = false;
+    state3.elapsed = 0;
   }
   function onboardingActive() {
-    return state2.active;
+    return state3.active;
   }
   function noteLaneChange() {
-    if (state2.active) state2.usedLane = true;
+    if (state3.active) state3.usedLane = true;
   }
   function noteThrottle() {
-    if (state2.active) state2.usedThrottle = true;
+    if (state3.active) state3.usedThrottle = true;
   }
   function updateOnboarding(dt) {
-    if (!state2.active) return;
-    state2.elapsed += dt;
-    if (state2.usedLane && state2.usedThrottle || state2.elapsed > MAX_SECONDS) {
-      state2.active = false;
+    if (!state3.active) return;
+    state3.elapsed += dt;
+    if (state3.usedLane && state3.usedThrottle || state3.elapsed > MAX_SECONDS) {
+      state3.active = false;
       saveOnboarded(true);
     }
   }
   function onboardingState() {
-    return { lane: !state2.usedLane, throttle: !state2.usedThrottle };
+    return { lane: !state3.usedLane, throttle: !state3.usedThrottle };
   }
   function resetOnboarding() {
     saveOnboarded(false);
-    state2.active = false;
+    state3.active = false;
   }
 
   // src/player.ts
   function laneInputStateAllows() {
-    return player.state !== "CRASHED";
+    return player.state !== "CRASHED" && !countdownActive();
   }
   function requestLaneChange(direction) {
     if (!laneInputStateAllows()) return;
@@ -1608,7 +1707,7 @@ var HarborLoop = (() => {
     }
   }
   function setThrottle(active) {
-    inputState.throttle = Boolean(active);
+    inputState.throttle = Boolean(active) && !countdownActive();
     if (inputState.throttle) {
       noteThrottle();
       audio.ensureStarted();
@@ -1668,6 +1767,24 @@ var HarborLoop = (() => {
     const before = player.distance;
     player.distance = advanceDistanceAtRoadSpeed(player.distance, player.speed, dt, player.visualLane);
     player.travelled += Math.max(0, player.distance - before);
+    recordTrail();
+    updateCornering(dt);
+  }
+  function updateCornering(dt) {
+    const heading = sampleAtDistance(player.distance, player.visualLane).angle;
+    let delta = heading - player.previousHeading;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    player.previousHeading = heading;
+    const rate = Math.abs(delta) / Math.max(dt, 1e-4);
+    const load = Math.min(1, rate * player.speed / 900);
+    const response = load > player.cornering ? 9 : 3.2;
+    player.cornering += (load - player.cornering) * (1 - Math.exp(-dt * response));
+  }
+  var TRAIL_LENGTH = 12;
+  function recordTrail() {
+    player.trail.push({ distance: player.distance, lane: player.visualLane });
+    if (player.trail.length > TRAIL_LENGTH) player.trail.shift();
   }
 
   // src/modes/ghostLane.ts
@@ -2034,6 +2151,8 @@ var HarborLoop = (() => {
     "in-the-zone",
     "hot-rods"
   ]);
+  var RELEASED_MODE_IDS = /* @__PURE__ */ new Set(["combo-racers"]);
+  var RELEASED_MODES = MODES.filter((mode) => RELEASED_MODE_IDS.has(mode.id));
   var BY_ID2 = new Map(MODES.map((mode) => [mode.id, mode]));
   function modeById(id) {
     const mode = BY_ID2.get(id);
@@ -2042,7 +2161,7 @@ var HarborLoop = (() => {
   }
 
   // src/daily.ts
-  var DAILY_POOL = MODES.filter((mode) => !mode.lowerIsBetter).map((mode) => mode.id);
+  var DAILY_POOL = RELEASED_MODES.filter((mode) => !mode.lowerIsBetter).map((mode) => mode.id);
   function pad(value) {
     return value < 10 ? `0${value}` : String(value);
   }
@@ -2473,11 +2592,14 @@ var HarborLoop = (() => {
   }
   var STARTING_MODE_COUNT = 3;
   var MODE_UNLOCK_COST = [3, 6, 10, 14, 19, 24, 30, 36, 43, 50, 58, 66, 75];
-  var DIFFICULTY_UNLOCK_COST = {
-    normal: 0,
-    turbo: 6,
-    master: 20
-  };
+  function difficultyCosts() {
+    const ceiling = RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
+    return {
+      normal: 0,
+      turbo: Math.max(2, Math.round(ceiling * 0.33)),
+      master: Math.max(4, Math.round(ceiling * 0.66))
+    };
+  }
   var DIFFICULTY_STAR_SCALE = {
     normal: 1,
     turbo: 1.15,
@@ -2502,7 +2624,7 @@ var HarborLoop = (() => {
   }
   function totalStars() {
     let total = 0;
-    for (const mode of MODES) {
+    for (const mode of RELEASED_MODES) {
       for (const difficulty of DIFFICULTIES) {
         total += starsFor(mode.id, difficulty);
       }
@@ -2510,30 +2632,34 @@ var HarborLoop = (() => {
     return total;
   }
   function maxStars() {
-    return MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
+    return RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
   }
   function modeUnlockCost(modeId) {
     var _a;
-    const index = MODES.findIndex((mode) => mode.id === modeId);
+    const index = RELEASED_MODES.findIndex((mode) => mode.id === modeId);
+    if (index < 0) return 0;
     if (index < STARTING_MODE_COUNT) return 0;
     return (_a = MODE_UNLOCK_COST[index - STARTING_MODE_COUNT]) != null ? _a : 0;
   }
   function modeUnlocked(modeId, stars = totalStars()) {
-    return unlockOverride || stars >= modeUnlockCost(modeId);
+    if (unlockOverride) return true;
+    if (!RELEASED_MODE_IDS.has(modeId)) return false;
+    return stars >= modeUnlockCost(modeId);
   }
   function difficultyUnlockCost(difficulty) {
-    return DIFFICULTY_UNLOCK_COST[difficulty];
+    return difficultyCosts()[difficulty];
   }
   function difficultyUnlocked(difficulty, stars = totalStars()) {
-    return unlockOverride || stars >= DIFFICULTY_UNLOCK_COST[difficulty];
+    return unlockOverride || stars >= difficultyCosts()[difficulty];
   }
   function nextUnlock() {
     const stars = totalStars();
+    const costs = difficultyCosts();
     for (const difficulty of DIFFICULTIES) {
-      const cost = DIFFICULTY_UNLOCK_COST[difficulty];
+      const cost = costs[difficulty];
       if (stars < cost) return { label: DIFFICULTY_PROFILES[difficulty].label, cost };
     }
-    for (const mode of MODES) {
+    for (const mode of RELEASED_MODES) {
       const cost = modeUnlockCost(mode.id);
       if (stars < cost) return { label: mode.name, cost };
     }
@@ -2681,10 +2807,57 @@ var HarborLoop = (() => {
     for (const particle of pool) if (particle.life > 0) count += 1;
     return count;
   }
+  var FLOATER_POOL = 8;
+  var floaters = Array.from({ length: FLOATER_POOL }, () => ({
+    x: 0,
+    y: 0,
+    text: "",
+    life: 0,
+    maxLife: 1,
+    size: 12,
+    color: "#fff"
+  }));
+  var nextFloater = 0;
+  function floatText(x, y, text, color, size = 13) {
+    const floater = floaters[nextFloater];
+    nextFloater = (nextFloater + 1) % FLOATER_POOL;
+    floater.x = x;
+    floater.y = y;
+    floater.text = text;
+    floater.color = color;
+    floater.size = size;
+    floater.maxLife = 0.55;
+    floater.life = floater.maxLife;
+  }
+  function updateFloaters(dt) {
+    for (const floater of floaters) {
+      if (floater.life <= 0) continue;
+      floater.life -= dt;
+      floater.y -= dt * 26;
+    }
+  }
+  function drawFloaters() {
+    ctx.save();
+    ctx.textAlign = "center";
+    for (const floater of floaters) {
+      if (floater.life <= 0) continue;
+      const t = floater.life / floater.maxLife;
+      ctx.globalAlpha = Math.min(1, t * 1.8);
+      ctx.font = `900 ${floater.size}px monospace`;
+      ctx.fillStyle = "rgba(8,17,25,0.75)";
+      ctx.fillText(floater.text, floater.x, floater.y + 1.2);
+      ctx.fillStyle = floater.color;
+      ctx.fillText(floater.text, floater.x, floater.y);
+    }
+    ctx.restore();
+  }
+  function clearFloaters() {
+    for (const floater of floaters) floater.life = 0;
+  }
 
   // src/feel.ts
   var MAX_SHAKE = 9;
-  var state3 = {
+  var state4 = {
     /** Seconds of simulation freeze left. */
     hitStop: 0,
     shake: 0,
@@ -2692,38 +2865,38 @@ var HarborLoop = (() => {
     shakeTime: 0
   };
   function addHitStop(seconds) {
-    state3.hitStop = Math.max(state3.hitStop, seconds);
+    state4.hitStop = Math.max(state4.hitStop, seconds);
   }
   function addShake(strength, angle = Math.random() * Math.PI * 2) {
-    if (strength <= state3.shake) return;
-    state3.shake = Math.min(MAX_SHAKE, strength);
-    state3.shakeAngle = angle;
-    state3.shakeTime = 0;
+    if (strength <= state4.shake) return;
+    state4.shake = Math.min(MAX_SHAKE, strength);
+    state4.shakeAngle = angle;
+    state4.shakeTime = 0;
   }
   function consumeHitStop(dt) {
-    if (state3.hitStop <= 0) return dt;
-    state3.hitStop = Math.max(0, state3.hitStop - dt);
+    if (state4.hitStop <= 0) return dt;
+    state4.hitStop = Math.max(0, state4.hitStop - dt);
     return 0;
   }
   function updateFeel(dt) {
-    state3.shakeTime += dt;
-    state3.shake = Math.max(0, state3.shake - dt * 52);
+    state4.shakeTime += dt;
+    state4.shake = Math.max(0, state4.shake - dt * 52);
   }
   function shakeOffsetX() {
-    if (state3.shake <= 0) return 0;
-    return Math.cos(state3.shakeAngle + state3.shakeTime * 47) * state3.shake;
+    if (state4.shake <= 0) return 0;
+    return Math.cos(state4.shakeAngle + state4.shakeTime * 47) * state4.shake;
   }
   function shakeOffsetY() {
-    if (state3.shake <= 0) return 0;
-    return Math.sin(state3.shakeAngle + state3.shakeTime * 41) * state3.shake * 0.7;
+    if (state4.shake <= 0) return 0;
+    return Math.sin(state4.shakeAngle + state4.shakeTime * 41) * state4.shake * 0.7;
   }
   function resetFeel() {
-    state3.hitStop = 0;
-    state3.shake = 0;
-    state3.shakeTime = 0;
+    state4.hitStop = 0;
+    state4.shake = 0;
+    state4.shakeTime = 0;
   }
   function feelState() {
-    return { hitStop: state3.hitStop, shake: state3.shake };
+    return { hitStop: state4.hitStop, shake: state4.shake };
   }
 
   // src/run.ts
@@ -2757,7 +2930,9 @@ var HarborLoop = (() => {
     resetEffects();
     resetFeel();
     clearParticles();
+    clearFloaters();
     resetClock();
+    beginCountdown();
     beginOnboarding();
     touchStreak();
     run.modeId = modeId;
@@ -2984,16 +3159,35 @@ var HarborLoop = (() => {
   var BACK_BUTTON = { x: DESIGN_W - 52, y: 12, w: 40, h: 40 };
   function drawComboPill() {
     ctx.fillStyle = "rgba(8,17,25,0.66)";
-    roundRect(ctx, 12, 12, 68, 42, 13);
+    roundRect(ctx, 12, 12, 78, 44, 13);
     ctx.fill();
-    ctx.fillStyle = player.combo > 0 ? COLORS.accentLight : COLORS.text;
+    ctx.fillStyle = "rgba(247,244,234,0.5)";
+    ctx.font = "700 7.5px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("BEST", 51, 24);
+    ctx.fillStyle = player.bestCombo > 0 ? COLORS.accentLight : COLORS.text;
     const tierPulse = player.tierBoostElapsed > 0 ? 1 + Math.sin((PLAYER_TIER_BOOST_DURATION - player.tierBoostElapsed) * Math.PI * 8) * 0.08 : 1;
     ctx.save();
-    ctx.translate(46, 35);
+    ctx.translate(51, 42);
     ctx.scale(tierPulse, tierPulse);
-    ctx.font = "900 25px monospace";
+    ctx.font = "900 23px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(`x${player.combo}`, 0, 5);
+    ctx.fillText(`x${player.bestCombo}`, 0, 4);
+    ctx.restore();
+  }
+  function drawCountdown() {
+    if (!countdownActive()) return;
+    const label = countdownLabel();
+    ctx.save();
+    ctx.fillStyle = "rgba(8,17,25,0.42)";
+    ctx.fillRect(0, 0, DESIGN_W, 844);
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.accentLight;
+    ctx.font = "900 116px monospace";
+    ctx.fillText(label, DESIGN_W / 2, 420);
+    ctx.fillStyle = "rgba(247,244,234,0.7)";
+    ctx.font = "900 13px sans-serif";
+    ctx.fillText("准备", DESIGN_W / 2, 462);
     ctx.restore();
   }
   function drawClockAndScore() {
@@ -3094,6 +3288,7 @@ var HarborLoop = (() => {
     drawCrashBanner();
     drawBanner();
     drawOnboarding();
+    drawCountdown();
   }
   function drawLaneArrow(cx, cy, direction, color) {
     const tip = direction > 0 ? -15 : 15;
@@ -3303,7 +3498,7 @@ var HarborLoop = (() => {
     ctx.font = "600 11px sans-serif";
     ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
     drawDailyCard();
-    MODES.forEach((mode, index) => {
+    RELEASED_MODES.forEach((mode, index) => {
       drawModeRow(mode.id, index, stars);
     });
     if (toast.text) {
@@ -3325,7 +3520,7 @@ var HarborLoop = (() => {
   }
   function drawDailyCard() {
     const plan = dailyPlan();
-    const mode = MODES.find((entry) => entry.id === plan.modeId);
+    const mode = RELEASED_MODES.find((entry) => entry.id === plan.modeId);
     panel(DAILY_RECT, { fill: UI.primary, radius: 13, lift: 4 });
     ctx.textAlign = "left";
     ctx.fillStyle = UI.ink;
@@ -3344,7 +3539,7 @@ var HarborLoop = (() => {
     ctx.fillText("开始 ▸", DAILY_RECT.x + DAILY_RECT.w - 14, DAILY_RECT.y + 27);
   }
   function drawModeRow(modeId, index, stars) {
-    const mode = MODES[index];
+    const mode = RELEASED_MODES[index];
     const rect = rowRect(index);
     const unlocked = modeUnlocked(modeId, stars);
     const fromOriginal = ORIGINAL_MODE_IDS.has(modeId);
@@ -3423,9 +3618,9 @@ var HarborLoop = (() => {
       }
       return true;
     }
-    for (let i = 0; i < MODES.length; i++) {
+    for (let i = 0; i < RELEASED_MODES.length; i++) {
       if (!hits(rowRect(i), x, y)) continue;
-      const mode = MODES[i];
+      const mode = RELEASED_MODES[i];
       if (!modeUnlocked(mode.id, stars)) {
         audio.playUiDenied();
         showToast(`需要 ${modeUnlockCost(mode.id)} 颗星解锁`);
@@ -4180,6 +4375,19 @@ var HarborLoop = (() => {
     ctx.fill();
     ctx.restore();
   }
+  function drawAfterimage() {
+    const trail = player.trail;
+    if (trail.length < 6 || player.state === "CRASHED") return;
+    const cruise = currentCruiseSpeed();
+    const intensity2 = Math.min(1, Math.max(0, (player.speed - cruise * 0.95) / 140));
+    if (intensity2 <= 0.05) return;
+    for (let ghost = 1; ghost <= 3; ghost++) {
+      const index = trail.length - 1 - ghost * 3;
+      if (index < 0) break;
+      const sample = trail[index];
+      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity2 * (0.28 - ghost * 0.07));
+    }
+  }
   function drawCars() {
     for (const car of aiCars) {
       if (!car.alive) {
@@ -4189,6 +4397,7 @@ var HarborLoop = (() => {
       if (car.hasZone) drawZone(car);
       drawAiCar(car);
     }
+    drawAfterimage();
     drawFireballAura();
     drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
   }
@@ -4299,6 +4508,8 @@ var HarborLoop = (() => {
         player.passPopElapsed = 0;
         car.passIndex = currentPassIndex;
         audio.playOvertake(player.combo, overtakes);
+        const passPoint = sampleAtDistance(player.distance, player.visualLane);
+        floatText(passPoint.x, passPoint.y - 9, `${player.combo}`, "#C5FFF7", 13);
         if (newTier > previousTier) {
           player.tierBoostElapsed = PLAYER_TIER_BOOST_DURATION;
           audio.playSpeedTierUp(newTier);
@@ -4331,9 +4542,11 @@ var HarborLoop = (() => {
   // src/main.ts
   function stepRace(dt) {
     updateControlFlash(dt);
+    if (updateCountdown(dt)) return;
     updateOnboarding(dt);
     updateFeel(dt);
     updateParticles(dt);
+    updateFloaters(dt);
     const simDt = consumeHitStop(dt);
     if (simDt <= 0) return;
     updateAi(simDt);
@@ -4352,6 +4565,7 @@ var HarborLoop = (() => {
     drawSpeedLines();
     drawCars();
     drawParticles();
+    drawFloaters();
     ctx.restore();
     ctx.save();
     ctx.translate(offsetX, offsetY);

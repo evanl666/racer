@@ -21,6 +21,7 @@ import { app, finishRun } from './app';
 import { audio } from './audio';
 import { frameDelta } from './clock';
 import { updateControlFlash } from './controls';
+import { updateCountdown } from './countdown';
 import { consumeHitStop, shakeOffsetX, shakeOffsetY, updateFeel } from './feel';
 import { installInput, releaseAllPointers } from './input';
 import { updateOnboarding } from './onboarding';
@@ -28,7 +29,7 @@ import { ctx, DPR, offsetX, offsetY, scale, scheduleFrame, VIEW_H, VIEW_W } from
 import { updatePlayer } from './player';
 import { drawControls, drawHud } from './render/hud';
 import { drawBlackout, drawHazardLane } from './render/overlays';
-import { drawParticles, updateParticles } from './render/particles';
+import { drawFloaters, drawParticles, updateFloaters, updateParticles } from './render/particles';
 import { drawSpeedLines } from './render/speedLines';
 import { drawStaticScene } from './render/staticLayer';
 import { drawCars } from './render/vehicles';
@@ -42,9 +43,14 @@ import { loadMuted } from './storage';
 
 function stepRace(dt: number): void {
   updateControlFlash(dt);
+
+  // Nothing moves until the lights go out.
+  if (updateCountdown(dt)) return;
+
   updateOnboarding(dt);
   updateFeel(dt);
   updateParticles(dt);
+  updateFloaters(dt);
 
   // Hit-stop returns zero simulation time, so the world holds still for a beat
   // while the particles and the shake keep playing.
@@ -73,6 +79,7 @@ function drawRace(): void {
   drawSpeedLines();
   drawCars();
   drawParticles();
+  drawFloaters();
   ctx.restore();
 
   ctx.save();
@@ -139,7 +146,8 @@ export { player, aiCars, inputState };
 export { app, startMode, openMenu, retryRun, startDaily, shareForRevive, canRevive } from './app';
 export { run } from './run';
 export { trackLength } from './track';
-export { MODES } from './modes';
+export { currentCruiseSpeed, cruiseSpeedForCombo } from './state';
+export { MODES, RELEASED_MODES } from './modes';
 export { laneButtonFlash } from './controls';
 export { debugPointerCount } from './input';
 export { feelState } from './feel';
@@ -150,6 +158,7 @@ export { audio } from './audio';
 export { loadMuted, saveMuted } from './storage';
 export { onboardingActive, resetOnboarding } from './onboarding';
 export { currentStreak, touchStreak } from './streak';
+export { countdownActive, countdownRemaining, clearCountdown } from './countdown';
 export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';

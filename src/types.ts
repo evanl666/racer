@@ -38,6 +38,12 @@ export interface Player {
   heat: number;
   /** Road distance covered this run, used by the distance-scored modes. */
   travelled: number;
+  /** Recent positions, newest last, for the afterimage. */
+  trail: Array<{ distance: number; lane: number }>;
+  /** Track heading last frame, used to derive cornering load. */
+  previousHeading: number;
+  /** How hard the car is cornering, 0..1. Drives the tyre sound. */
+  cornering: number;
 }
 
 export interface AiCar {
@@ -100,6 +106,8 @@ export interface Control {
  */
 export interface EngineSnapshot {
   tier: number;
+  /** 0..1 cornering load, for the tyre scrub layer. */
+  cornering: number;
   throttle: boolean;
   speed: number;
   cruiseSpeed: number;

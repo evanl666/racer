@@ -6,9 +6,10 @@ import { MODES, modeById } from './modes';
 import { clearSeed, setSeed } from './rng';
 import type { Difficulty, ModeDefinition, ModeId, RunState } from './modes/types';
 import { resetClock } from './clock';
+import { beginCountdown } from './countdown';
 import { beginOnboarding } from './onboarding';
 import { touchStreak } from './streak';
-import { clearParticles } from './render/particles';
+import { clearFloaters, clearParticles } from './render/particles';
 import { resetFeel } from './feel';
 import { aiCars, player, resetGame } from './state';
 import { setTrack } from './track';
@@ -55,8 +56,10 @@ export function startRun(modeId: ModeId, difficulty: Difficulty, daily?: DailyRu
   resetEffects();
   resetFeel();
   clearParticles();
+  clearFloaters();
   // However long the menu was open must not land on the first frame of the run.
   resetClock();
+  beginCountdown();
   beginOnboarding();
   touchStreak();
 

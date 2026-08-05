@@ -54,6 +54,16 @@ export const ORIGINAL_MODE_IDS: ReadonlySet<ModeId> = new Set<ModeId>([
   'hot-rods'
 ]);
 
+/**
+ * Modes visible to players. The rest are built and tested but held back: sixteen
+ * at once buried the one mode the game is actually about. Add ids here to ship
+ * them.
+ */
+export const RELEASED_MODE_IDS: ReadonlySet<ModeId> = new Set<ModeId>(['combo-racers']);
+
+/** Menu order, filtered to what has shipped. */
+export const RELEASED_MODES: ModeDefinition[] = MODES.filter((mode) => RELEASED_MODE_IDS.has(mode.id));
+
 const BY_ID = new Map<ModeId, ModeDefinition>(MODES.map((mode) => [mode.id, mode]));
 
 export function modeById(id: ModeId): ModeDefinition {

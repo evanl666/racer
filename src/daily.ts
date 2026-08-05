@@ -11,12 +11,12 @@
  * a challenge everybody beats gives nobody anything to say.
  */
 
-import { MODES, modeById } from './modes';
+import { RELEASED_MODES, modeById } from './modes';
 import type { Difficulty, ModeId } from './modes/types';
 import { hashSeed } from './rng';
 
 /** Time Attack scores in seconds where lower wins, which breaks a target-based stage. */
-const DAILY_POOL: ModeId[] = MODES.filter((mode) => !mode.lowerIsBetter).map((mode) => mode.id);
+const DAILY_POOL: ModeId[] = RELEASED_MODES.filter((mode) => !mode.lowerIsBetter).map((mode) => mode.id);
 
 export interface DailyPlan {
   /** YYYY-MM-DD, the leaderboard partition key. */

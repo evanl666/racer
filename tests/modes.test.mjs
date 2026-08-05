@@ -14,6 +14,7 @@ const LEFT_BTN = touch(2, 58, 774);
 /** Drives a mode with the throttle down, weaving, until it ends or time runs out. */
 function playMode(modeId, seconds, { weave = true } = {}) {
   game.startMode(modeId);
+  game.clearCountdown();
   fire('start', [THROTTLE]);
   let played = 0;
   const slice = 0.5;
@@ -32,16 +33,17 @@ function playMode(modeId, seconds, { weave = true } = {}) {
 check('boots into the mode menu', game.app.screen === 'MENU', game.app.screen);
 
 // --- progression ladder (checked before unlocking everything) --------------
-check('only three modes are open from a standing start',
-  game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length === 3,
-  `${game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length} open`);
+check('only the released mode is playable',
+  game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length === game.RELEASED_MODES.length,
+  `${game.MODES.filter((mode) => game.modeUnlocked(mode.id)).length} open of ${game.MODES.length}`);
+check('exactly one mode has shipped', game.RELEASED_MODES.length === 1,
+  game.RELEASED_MODES.map((mode) => mode.id).join(','));
 check('a locked mode refuses to start', game.startMode('endurance') === false);
 check('refusing to start leaves you in the menu', game.app.screen === 'MENU');
-check('the first mode is playable', game.modeUnlocked(game.MODES[0].id));
+check('the released mode is playable', game.modeUnlocked(game.RELEASED_MODES[0].id));
 check('turbo is locked at zero stars', game.difficultyUnlocked('turbo') === false);
-check('every locked mode costs more than the one before it',
-  game.MODES.slice(3).every((mode, i, list) =>
-    i === 0 || game.modeUnlockCost(mode.id) > game.modeUnlockCost(list[i - 1].id)));
+check('unreleased modes are not merely locked but absent',
+  game.MODES.filter((mode) => !game.RELEASED_MODES.includes(mode)).every((mode) => !game.modeUnlocked(mode.id)));
 
 // The suites below need every mode reachable.
 game.setUnlockOverride(true);
@@ -81,6 +83,7 @@ for (const mode of game.MODES) {
 
 // Death Race arms the car permanently, so contact must destroy rather than crash.
 game.startMode('death-race');
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(25);
 fire('cancel', [THROTTLE]);
@@ -89,8 +92,10 @@ check('Death Race never crashes the player', game.run.crashes === 0, `crashes=${
 
 // Sunday Drivers slows the field down; the player should lap it easily.
 game.startMode('sunday-drivers');
+game.clearCountdown();
 const slowSpeeds = game.aiCars.map((car) => car.baseSpeed);
 game.startMode('speed-monkey');
+game.clearCountdown();
 const normalSpeeds = game.aiCars.map((car) => car.baseSpeed);
 check(
   'Sunday Drivers slows the traffic down',
@@ -101,10 +106,12 @@ check(
 // Difficulty scales both the player and the traffic.
 game.app.difficulty = 'normal';
 game.startMode('speed-monkey');
+game.clearCountdown();
 const normalPlayer = game.player.speed;
 const normalTraffic = game.aiCars[0].baseSpeed;
 game.app.difficulty = 'master';
 game.startMode('speed-monkey');
+game.clearCountdown();
 check(
   'Master raises the player cruise speed',
   game.player.speed > normalPlayer * 1.4,
@@ -122,6 +129,7 @@ const counts = {};
 for (const difficulty of ['normal', 'turbo', 'master']) {
   game.app.difficulty = difficulty;
   game.startMode('speed-monkey');
+  game.clearCountdown();
   counts[difficulty] = game.aiCars.length;
 }
 check(
@@ -130,12 +138,13 @@ check(
   `${counts.normal} / ${counts.turbo} / ${counts.master}`
 );
 check('Normal is no longer the old 18-car field', counts.normal >= 24, `cars=${counts.normal}`);
-check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 6));
+check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 5));
 game.app.difficulty = 'normal';
 
 // The static scene is cached on an offscreen canvas, which must be a *second*
 // canvas; drawing the layer onto the display canvas would blank the frame.
 game.startMode('speed-monkey');
+game.clearCountdown();
 step(0.1);
 check('an offscreen layer canvas is created', canvasCount() >= 2, `${canvasCount()} canvases`);
 
@@ -147,8 +156,10 @@ check('every mode names a known circuit',
 
 // Switching modes actually swaps the geometry, so lap length changes.
 game.startMode('speed-monkey');
+game.clearCountdown();
 const longBayLap = game.trackLength();
 game.startMode('sunday-drivers');
+game.clearCountdown();
 const ovalLap = game.trackLength();
 check('circuits have different lap lengths', Math.abs(longBayLap - ovalLap) > 100,
   `${longBayLap.toFixed(0)} vs ${ovalLap.toFixed(0)}`);
@@ -158,6 +169,7 @@ check('cars are placed on the loaded circuit',
 
 // Hot Rods heats the engine while the throttle is held.
 game.startMode('hot-rods');
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(1.5);
 const heat = game.player.heat;
@@ -168,6 +180,7 @@ check('Hot Rods cools off when released', game.player.heat < heat, `heat=${game.
 
 // In The Zone marks a subset of the field.
 game.startMode('in-the-zone');
+game.clearCountdown();
 const zoned = game.aiCars.filter((car) => car.hasZone).length;
 check('In The Zone marks six cars', zoned === 6, `marked=${zoned}`);
 
@@ -176,6 +189,7 @@ check('In The Zone marks six cars', zoned === 6, `marked=${zoned}`);
 // short acceleration boost so the risky line is genuinely faster.
 game.app.difficulty = 'master';
 game.startMode('sunday-drivers');
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(45);
 fire('cancel', [THROTTLE]);
@@ -185,6 +199,7 @@ game.app.difficulty = 'normal';
 // A crash must produce particles, a freeze and a shake. Combo Racers survives a
 // crash, so the effects can be watched decaying instead of the run ending.
 game.startMode('combo-racers');
+game.clearCountdown();
 step(0.2);
 const beforeCrash = game.player.distance;
 game.aiCars.length = 1;
@@ -215,6 +230,7 @@ check('particles die out', game.activeParticles() === 0, `${game.activeParticles
 
 // Ending a run mid-freeze must not carry the effects into the next one.
 game.startMode('speed-monkey');
+game.clearCountdown();
 check('a new run starts with no particles', game.activeParticles() === 0);
 check('a new run starts with no hit-stop or shake',
   game.feelState().hitStop === 0 && game.feelState().shake === 0);
@@ -223,20 +239,33 @@ check('a new run starts with no hit-stop or shake',
 game.openMenu();
 check('menu is reachable again', game.app.screen === 'MENU');
 
-// Tapping the first mode row starts it. Rows begin at y=146 with 41px pitch.
-fire('start', [touch(9, 195, 166)]);
-fire('end', [touch(9, 195, 166)]);
-check('tapping a mode row starts that mode', game.app.screen === 'PLAYING', `screen=${game.app.screen}`);
+// The daily card sits at y=142..186, above the mode list at y=196.
+fire('start', [touch(9, 195, 164)]);
+fire('end', [touch(9, 195, 164)]);
+check('tapping the daily card starts the daily run',
+  game.app.screen === 'PLAYING' && game.run.daily === true, `screen=${game.app.screen}`);
+game.clearCountdown();
+
+game.openMenu();
+fire('start', [touch(11, 195, 210)]);
+fire('end', [touch(11, 195, 210)]);
+check('tapping the mode row starts that mode',
+  game.app.screen === 'PLAYING' && game.run.daily === false, `screen=${game.app.screen}`);
+game.clearCountdown();
 
 // Tapping a difficulty pill switches difficulty.
 game.openMenu();
-fire('start', [touch(10, 300, 109)]);
-fire('end', [touch(10, 300, 109)]);
-check('tapping a difficulty pill switches it', game.app.difficulty === 'master', game.app.difficulty);
-game.app.difficulty = 'normal';
+// Checked with the override off, since that is what a real player faces.
+game.setUnlockOverride(false);
+fire('start', [touch(10, 300, 95)]);
+fire('end', [touch(10, 300, 95)]);
+check('a locked difficulty pill refuses rather than switching',
+  game.app.difficulty === 'normal', game.app.difficulty);
+game.setUnlockOverride(true);
 
 // Scores persist per mode and difficulty.
 game.startMode('sunday-drivers');
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(62);
 fire('cancel', [THROTTLE]);

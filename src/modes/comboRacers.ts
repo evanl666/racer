@@ -1,17 +1,17 @@
 import { player } from '../state';
 import type { ModeDefinition } from './types';
 
-/** Combo needed to clear the mode, standing in for catching the leader. */
-const TARGET_COMBO = 40;
-
 /**
- * Combo Racers: overtakes build the combo and the speed tier, a crash wipes both,
- * and the clock never stops. Clearing means reaching the target combo in time.
+ * Combo Racers: how many cars can you pass in a row before the clock stops you.
+ *
+ * A crash breaks the streak but never the record — the score is the best streak
+ * of the run, so a mistake costs momentum rather than the whole attempt. There
+ * is no clear condition; it is a pure score attack.
  */
 export const comboRacers: ModeDefinition = {
   id: 'combo-racers',
   name: 'COMBO RACERS',
-  rule: `限时 60 秒 · Combo 冲到 ${TARGET_COMBO} · 撞车清零`,
+  rule: '限时 60 秒 · 看你能连超多少辆 · 撞车断连击',
   timeLimit: 60,
   scoreUnit: 'COMBO',
   trafficScale: 1,
@@ -19,16 +19,13 @@ export const comboRacers: ModeDefinition = {
   stars: [12, 26, 40],
 
   update(_dt, run) {
-    if (player.combo > run.score) run.score = player.combo;
-    run.progress = Math.min(1, player.combo / TARGET_COMBO);
+    // bestCombo survives a crash, which is exactly what the score should be.
+    run.score = player.bestCombo;
+    run.progress = -1;
   },
 
   onCrash(run) {
     run.banner = 'COMBO LOST';
     run.bannerTimer = 1.1;
-  },
-
-  cleared(run) {
-    return run.score >= TARGET_COMBO;
   }
 };

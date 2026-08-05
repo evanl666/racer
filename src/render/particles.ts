@@ -130,3 +130,68 @@ export function activeParticles(): number {
   for (const particle of pool) if (particle.life > 0) count += 1;
   return count;
 }
+
+
+// ---------------------------------------------------------------------------
+// Floating text
+// ---------------------------------------------------------------------------
+
+interface Floater {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  maxLife: number;
+  size: number;
+  color: string;
+}
+
+const FLOATER_POOL = 8;
+
+const floaters: Floater[] = Array.from({ length: FLOATER_POOL }, () => ({
+  x: 0, y: 0, text: '', life: 0, maxLife: 1, size: 12, color: '#fff'
+}));
+
+let nextFloater = 0;
+
+/** Pops a number above a point; used for the running combo on the player car. */
+export function floatText(x: number, y: number, text: string, color: string, size = 13): void {
+  const floater = floaters[nextFloater];
+  nextFloater = (nextFloater + 1) % FLOATER_POOL;
+  floater.x = x;
+  floater.y = y;
+  floater.text = text;
+  floater.color = color;
+  floater.size = size;
+  floater.maxLife = 0.55;
+  floater.life = floater.maxLife;
+}
+
+export function updateFloaters(dt: number): void {
+  for (const floater of floaters) {
+    if (floater.life <= 0) continue;
+    floater.life -= dt;
+    // Drifts up as it fades, which is what makes it read as a pop rather than a label.
+    floater.y -= dt * 26;
+  }
+}
+
+export function drawFloaters(): void {
+  ctx.save();
+  ctx.textAlign = 'center';
+  for (const floater of floaters) {
+    if (floater.life <= 0) continue;
+    const t = floater.life / floater.maxLife;
+    ctx.globalAlpha = Math.min(1, t * 1.8);
+    ctx.font = `900 ${floater.size}px monospace`;
+    ctx.fillStyle = 'rgba(8,17,25,0.75)';
+    ctx.fillText(floater.text, floater.x, floater.y + 1.2);
+    ctx.fillStyle = floater.color;
+    ctx.fillText(floater.text, floater.x, floater.y);
+  }
+  ctx.restore();
+}
+
+export function clearFloaters(): void {
+  for (const floater of floaters) floater.life = 0;
+}

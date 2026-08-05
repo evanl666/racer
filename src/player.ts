@@ -10,13 +10,14 @@ import {
 } from './config';
 import { tuning } from './difficulty';
 import { moveToward } from './mathUtil';
+import { countdownActive } from './countdown';
 import { noteLaneChange, noteThrottle } from './onboarding';
 import { vibrate } from './platform';
 import { baseCruiseSpeed, currentTargetSpeed, inputState, player } from './state';
-import { advanceDistanceAtRoadSpeed } from './track';
+import { advanceDistanceAtRoadSpeed, sampleAtDistance } from './track';
 
 function laneInputStateAllows(): boolean {
-  return player.state !== 'CRASHED';
+  return player.state !== 'CRASHED' && !countdownActive();
 }
 
 export function requestLaneChange(direction: number): void {
@@ -38,7 +39,7 @@ export function requestLaneChange(direction: number): void {
 }
 
 export function setThrottle(active: boolean): void {
-  inputState.throttle = Boolean(active);
+  inputState.throttle = Boolean(active) && !countdownActive();
   if (inputState.throttle) {
     noteThrottle();
     audio.ensureStarted();
@@ -107,6 +108,35 @@ export function updatePlayer(dt: number): void {
   const before = player.distance;
   player.distance = advanceDistanceAtRoadSpeed(player.distance, player.speed, dt, player.visualLane);
   player.travelled += Math.max(0, player.distance - before);
+  recordTrail();
+  updateCornering(dt);
+}
+
+/**
+ * Cornering load from how fast the track heading is turning under the car.
+ * Fed to the audio as tyre scrub: the tighter the corner and the higher the
+ * speed, the more the tyres complain.
+ */
+function updateCornering(dt: number): void {
+  const heading = sampleAtDistance(player.distance, player.visualLane).angle;
+  let delta = heading - player.previousHeading;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  player.previousHeading = heading;
+
+  const rate = Math.abs(delta) / Math.max(dt, 0.0001);
+  const load = Math.min(1, (rate * player.speed) / 900);
+  // Asymmetric smoothing: bites quickly, releases slowly, like a real slide.
+  const response = load > player.cornering ? 9 : 3.2;
+  player.cornering += (load - player.cornering) * (1 - Math.exp(-dt * response));
+}
+
+/** Fixed-length history; the afterimage reads it back at a stride. */
+const TRAIL_LENGTH = 12;
+
+function recordTrail(): void {
+  player.trail.push({ distance: player.distance, lane: player.visualLane });
+  if (player.trail.length > TRAIL_LENGTH) player.trail.shift();
 }
 
 /** Fireball state is what turns a contact into a kill. */

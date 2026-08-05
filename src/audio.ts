@@ -83,6 +83,11 @@ function createLoopingNoiseSource(context: AudioContext): AudioBufferSourceNode 
 /** Every ten overtakes lifts the whole RPM band by one step. */
 const TIER_RPM_MULTIPLIER = [1.00, 1.065, 1.13, 1.19, 1.245, 1.295, 1.34, 1.38, 1.415, 1.445, 1.47];
 
+/** The tyre voice hangs off the same master as everything else. */
+function masterGainForTyres(master: GainNode): GainNode {
+  return master;
+}
+
 const MAX_VOICES = 12;
 
 /** Master level when unmuted. */
@@ -104,6 +109,14 @@ class AudioEngine {
   private engineNoise: AudioBufferSourceNode | null = null;
   private engineNoiseFilter: BiquadFilterNode | null = null;
   private engineNoiseGain: GainNode | null = null;
+  /** Sub-octave sine: the body the three-layer engine was missing. */
+  private engineBody: OscillatorNode | null = null;
+  private engineBodyGain: GainNode | null = null;
+  /** Tyre scrub, a separate filtered noise voice driven by cornering load. */
+  private tyreNoise: AudioBufferSourceNode | null = null;
+  private tyreFilter: BiquadFilterNode | null = null;
+  private tyreGain: GainNode | null = null;
+  private smoothCornering = 0;
 
   private muted = false;
   private smoothEngineFrequency = 48;
@@ -155,12 +168,24 @@ class AudioEngine {
         this.engineMid = context.createOscillator();
         this.engineHigh = context.createOscillator();
         this.engineNoise = createLoopingNoiseSource(context);
+        this.engineBody = context.createOscillator();
+        this.engineBodyGain = context.createGain();
+        this.tyreNoise = createLoopingNoiseSource(context);
+        this.tyreFilter = context.createBiquadFilter();
+        this.tyreGain = context.createGain();
 
         setAudioParam(this.masterGain.gain, this.muted ? 0 : MASTER_VOLUME);
         setAudioParam(this.engineGain.gain, 0.0001);
         setAudioParam(this.engineMidGain.gain, 0.070);
         setAudioParam(this.engineHighGain.gain, 0.018);
         setAudioParam(this.engineNoiseGain.gain, 0.0001);
+        setAudioParam(this.engineBodyGain.gain, 0.055);
+        setAudioParam(this.tyreGain.gain, 0.0001);
+        try { this.tyreFilter.type = 'bandpass'; } catch (error) { /* default filter */ }
+        setAudioParam(this.tyreFilter.frequency, 2400);
+        setAudioParam(this.tyreFilter.Q, 1.5);
+        try { this.engineBody.type = 'sine'; } catch (error) { /* default sine */ }
+        setAudioParam(this.engineBody.frequency, this.smoothEngineFrequency * 0.5);
 
         try { this.engineFilter.type = 'lowpass'; } catch (error) { /* default filter */ }
         setAudioParam(this.engineFilter.frequency, 520);
@@ -188,6 +213,13 @@ class AudioEngine {
           this.engineNoiseFilter.connect(this.engineNoiseGain);
           this.engineNoiseGain.connect(this.engineGain);
         }
+        this.engineBody.connect(this.engineBodyGain);
+        this.engineBodyGain.connect(this.engineGain);
+        if (this.tyreNoise) {
+          this.tyreNoise.connect(this.tyreFilter);
+          this.tyreFilter.connect(this.tyreGain);
+          this.tyreGain.connect(masterGainForTyres(this.masterGain));
+        }
         this.engineFilter.connect(this.engineGain);
         this.engineGain.connect(this.masterGain);
         this.masterGain.connect(context.destination);
@@ -196,6 +228,8 @@ class AudioEngine {
         safelyStartNode(this.engineMid);
         safelyStartNode(this.engineHigh);
         safelyStartNode(this.engineNoise);
+        safelyStartNode(this.engineBody);
+        safelyStartNode(this.tyreNoise);
         this.started = true;
       } catch (error) {
         this.disabled = true;
@@ -337,14 +371,16 @@ class AudioEngine {
 
         // Hand-rolled decay: the mini game WebAudio surface does not reliably
         // support scheduled ramps, so the update loop tears these down instead.
-        this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.42, volume: 0.30 });
+        this.transients.push({ nodes: [noise, gain], gain, elapsed: 0, duration: 0.55, volume: 0.34 });
       }
     } catch (error) {
       /* the crash must still happen without its sound */
     }
 
-    this.addTone('triangle', 0.30, 116, 44, 0.34);
-    this.addTone('sawtooth', 0.16, 220, 70, 0.12);
+    // Three parts: a low body that drops, a metallic ring, and a short scrape.
+    this.addTone('sine', 0.42, 128, 34, 0.40);
+    this.addTone('triangle', 0.26, 320, 96, 0.16);
+    this.addTone('sawtooth', 0.13, 900, 240, 0.07);
   }
 
   /** Close call: a short upward whoosh, distinct from the overtake blip. */
@@ -412,6 +448,18 @@ class AudioEngine {
     setAudioParam(this.engineFilter?.frequency, 330 + snapshot.tier * 46 + revAmount * 740 + speedRatio * 260);
     setAudioParam(this.engineNoiseFilter?.frequency, 560 + snapshot.tier * 65 + revAmount * 920 + speedRatio * 380);
     setAudioParam(this.engineNoiseGain?.gain, (0.003 + revAmount * 0.010 + speedRatio * 0.009) * duck);
+
+    // Sub-octave body, detuned a touch so it beats against the main layer
+    // instead of sitting exactly on top of it.
+    setAudioParam(this.engineBody?.frequency, this.smoothEngineFrequency * 0.503);
+    setAudioParam(this.engineBodyGain?.gain, (0.05 + speedRatio * 0.03) * duck);
+
+    // Tyre scrub. Smoothed separately from the engine so it swells into a
+    // corner and trails out of it.
+    const corneringTarget = snapshot.state === 'CRASHED' ? 0 : snapshot.cornering * speedRatio;
+    this.smoothCornering += (corneringTarget - this.smoothCornering) * (1 - Math.exp(-dt * 7));
+    setAudioParam(this.tyreFilter?.frequency, 1500 + this.smoothCornering * 2600);
+    setAudioParam(this.tyreGain?.gain, Math.max(0.0001, this.smoothCornering * 0.055 * duck));
 
     for (let index = this.transients.length - 1; index >= 0; index--) {
       const transient = this.transients[index];

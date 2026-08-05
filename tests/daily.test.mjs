@@ -52,6 +52,7 @@ check('clearing the seed returns to system randomness', game.isSeeded() === fals
 // --- a daily run is reproducible -------------------------------------------
 function runDailyBriefly() {
   game.startDaily();
+  game.clearCountdown();
   fire('start', [THROTTLE]);
   step(6);
   fire('cancel', [THROTTLE]);
@@ -66,10 +67,12 @@ check('two daily runs produce identical traffic',
 // The first frame of a run must be nominal, not however long the menu was open;
 // otherwise the opening frame lurches and two seeded runs diverge immediately.
 game.startDaily();
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(0.016);
 const oneFrameA = game.player.distance;
 game.startDaily();
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(0.016);
 check('the first frame of a run is deterministic', game.player.distance === oneFrameA,
@@ -79,10 +82,12 @@ fire('cancel', [THROTTLE]);
 // An ordinary run must NOT be seeded, or every session would be identical.
 game.setUnlockOverride(true);
 game.startMode('speed-monkey');
+game.clearCountdown();
 check('an ordinary run is not seeded', game.isSeeded() === false);
 
 // --- the daily flow ---------------------------------------------------------
 game.startDaily();
+game.clearCountdown();
 check('the daily run starts at stage one', game.run.stage === 1, `stage=${game.run.stage}`);
 check('the daily run is flagged as daily', game.run.daily === true);
 check('the daily run carries a stage target', game.run.stageTarget > 0, `${game.run.stageTarget}`);
@@ -113,6 +118,7 @@ check('a daily run does not overwrite the mode best',
 // player back into the same run rather than starting a new one.
 game.setUnlockOverride(true);
 game.startMode('speed-monkey');
+game.clearCountdown();
 fire('start', [THROTTLE]);
 step(3);
 const scoreBefore = game.run.score;
@@ -149,6 +155,7 @@ check('asking again is refused', game.shareForRevive() === false);
 
 // A cleared run is not something to be rescued from.
 game.startMode('combo-racers');
+game.clearCountdown();
 game.run.outcome = 'cleared';
 check('a cleared run offers no revive', game.canRevive() === false);
 
@@ -164,6 +171,7 @@ check('unmute takes effect', game.audio.isMuted() === false);
 // never be told twice.
 game.resetOnboarding();
 game.startMode('speed-monkey');
+game.clearCountdown();
 check('onboarding shows on a first run', game.onboardingActive() === true);
 
 // Using both controls dismisses it.
@@ -175,11 +183,16 @@ fire('cancel', [THROTTLE]);
 check('using both controls dismisses onboarding', game.onboardingActive() === false);
 
 game.startMode('speed-monkey');
+
+game.clearCountdown();
 check('onboarding does not come back', game.onboardingActive() === false);
 
-// It also gives up on its own if the player does nothing.
+// It also gives up on its own if the player does nothing. Empty the road first:
+// Speed Monkey ends on the first contact, and a finished run stops the timer.
 game.resetOnboarding();
 game.startMode('speed-monkey');
+game.clearCountdown();
+game.aiCars.length = 0;
 check('onboarding returns after a reset', game.onboardingActive() === true);
 step(13);
 check('onboarding times out rather than nagging', game.onboardingActive() === false);
@@ -194,5 +207,49 @@ check('a broken chain reports zero', game.currentStreak('2026-03-20') === 0,
   `${game.currentStreak('2026-03-20')}`);
 check('an unbroken chain still reports', game.currentStreak('2026-03-06') === 1,
   `${game.currentStreak('2026-03-06')}`);
+
+// --- countdown --------------------------------------------------------------
+// Three seconds where nothing moves, including the clock and the controls.
+game.setUnlockOverride(true);
+game.startMode('combo-racers');
+check('a run opens on the countdown', game.countdownActive() === true);
+
+const frozenAt = game.player.distance;
+fire('start', [THROTTLE]);
+step(1.0);
+check('the world holds still during the countdown', game.player.distance === frozenAt,
+  `${frozenAt.toFixed(2)} -> ${game.player.distance.toFixed(2)}`);
+check('the throttle is ignored during the countdown', game.player.speed === 125,
+  `${game.player.speed.toFixed(1)}`);
+check('the run clock has not started', game.run.elapsed === 0, `${game.run.elapsed}`);
+
+step(2.3);
+check('the countdown ends', game.countdownActive() === false);
+step(0.5);
+check('the world moves once the countdown ends', game.player.distance > frozenAt,
+  `${game.player.distance.toFixed(2)}`);
+fire('cancel', [THROTTLE]);
+
+// --- speed curve ------------------------------------------------------------
+// Speed must rise on every pass, hard early and gently late, and stay capped.
+const cruise = (combo) => {
+  game.startMode('combo-racers');
+  game.clearCountdown();
+  game.player.combo = combo;
+  return game.currentCruiseSpeed();
+};
+const at0 = cruise(0);
+const at1 = cruise(1);
+const at10 = cruise(10);
+const at50 = cruise(50);
+const at200 = cruise(200);
+
+check('a single overtake already adds speed', at1 > at0, `${at0} -> ${at1}`);
+check('the first ten passes are where the speed comes from', at10 - at0 >= 55,
+  `${at0} -> ${at10}`);
+check('late passes add far less than early ones',
+  (at200 - at50) / 150 < (at10 - at0) / 10 / 4,
+  `early ${(at10 - at0) / 10}/pass, late ${((at200 - at50) / 150).toFixed(2)}/pass`);
+check('cruise speed is capped', at200 <= 380, `${at200}`);
 
 finish();

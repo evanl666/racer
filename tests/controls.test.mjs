@@ -83,9 +83,13 @@ const LEFT_BTN = touch(2, 58, 774);
 const RIGHT_BTN = touch(3, 142, 774);
 const TRACK_POINT = touch(4, 100, 300);
 
+// These tests drive modes that have not shipped yet.
+game.setUnlockOverride(true);
+
 /** Empty traffic makes throttle and lane assertions deterministic. */
-function resetWithoutTraffic(modeId = 'sunday-drivers') {
+function resetWithoutTraffic(modeId = 'combo-racers') {
   game.startMode(modeId);
+  game.clearCountdown();
   game.aiCars.length = 0;
   fire('cancel', [THROTTLE, LEFT_BTN, RIGHT_BTN, TRACK_POINT]);
   step(0.02);
@@ -104,7 +108,9 @@ fire('start', [THROTTLE]);
 step(0.05);
 check('throttle press engages', game.inputState.throttle === true);
 step(1.5);
-check('throttle held reaches the tier-0 maximum', Math.abs(game.player.speed - 175) < 1, `speed=${game.player.speed.toFixed(1)}`);
+// Cruise 125 plus the fixed throttle margin of 60.
+check('throttle held reaches cruise plus the throttle margin', Math.abs(game.player.speed - 185) < 1,
+  `speed=${game.player.speed.toFixed(1)}`);
 
 fire('end', [THROTTLE]);
 step(0.05);
@@ -177,6 +183,7 @@ check('unknown pointer ids are ignored', game.debugPointerCount() === 0);
 
 // --- full simulation with traffic ----------------------------------------
 game.startMode('combo-racers');
+game.clearCountdown();
 let threw = null;
 try {
   fire('start', [THROTTLE]);

@@ -1,5 +1,5 @@
 {
-  "description": "Harbor Loop V0.10.5 - daily challenge, 16 modes, cloud leaderboard",
+  "description": "Harbor Loop V0.11.0 - Combo Racers",
   "packOptions": {
     "ignore": [
       {
@@ -80,7 +80,7 @@
   "compileType": "game",
   "libVersion": "3.8.10",
   "appid": "touristappid",
-  "projectname": "harbor-loop-v0-10-5",
+  "projectname": "harbor-loop-v0-11-0",
   "condition": {},
   "simulatorPluginLibVersion": {},
   "isGameTourist": false,

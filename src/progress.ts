@@ -9,7 +9,7 @@
  */
 
 import { DIFFICULTIES, DIFFICULTY_PROFILES } from './difficulty';
-import { MODES, modeById } from './modes';
+import { RELEASED_MODE_IDS, RELEASED_MODES, modeById } from './modes';
 import type { Difficulty, ModeDefinition, ModeId } from './modes/types';
 import { bestScore } from './storage';
 
@@ -36,11 +36,19 @@ const STARTING_MODE_COUNT = 3;
  */
 const MODE_UNLOCK_COST = [3, 6, 10, 14, 19, 24, 30, 36, 43, 50, 58, 66, 75];
 
-const DIFFICULTY_UNLOCK_COST: Record<Difficulty, number> = {
-  normal: 0,
-  turbo: 6,
-  master: 20
-};
+/**
+ * Difficulty costs scale with what has actually shipped, or a single-mode
+ * release would put Master permanently out of reach: one mode can only ever
+ * yield nine stars.
+ */
+function difficultyCosts(): Record<Difficulty, number> {
+  const ceiling = RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
+  return {
+    normal: 0,
+    turbo: Math.max(2, Math.round(ceiling * 0.33)),
+    master: Math.max(4, Math.round(ceiling * 0.66))
+  };
+}
 
 /** Harder settings demand a higher score for the same star. */
 const DIFFICULTY_STAR_SCALE: Record<Difficulty, number> = {
@@ -74,7 +82,7 @@ export function starsFor(modeId: ModeId, difficulty: Difficulty): number {
 /** Stars earned across every mode and difficulty. */
 export function totalStars(): number {
   let total = 0;
-  for (const mode of MODES) {
+  for (const mode of RELEASED_MODES) {
     for (const difficulty of DIFFICULTIES) {
       total += starsFor(mode.id, difficulty);
     }
@@ -83,37 +91,42 @@ export function totalStars(): number {
 }
 
 export function maxStars(): number {
-  return MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
+  return RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
 }
 
 /** Stars needed to open a mode, or 0 when it is available from the start. */
 export function modeUnlockCost(modeId: ModeId): number {
-  const index = MODES.findIndex((mode) => mode.id === modeId);
+  const index = RELEASED_MODES.findIndex((mode) => mode.id === modeId);
+  if (index < 0) return 0;
   if (index < STARTING_MODE_COUNT) return 0;
   return MODE_UNLOCK_COST[index - STARTING_MODE_COUNT] ?? 0;
 }
 
 export function modeUnlocked(modeId: ModeId, stars = totalStars()): boolean {
-  return unlockOverride || stars >= modeUnlockCost(modeId);
+  if (unlockOverride) return true;
+  // Modes that have not shipped are not merely locked, they are absent.
+  if (!RELEASED_MODE_IDS.has(modeId)) return false;
+  return stars >= modeUnlockCost(modeId);
 }
 
 export function difficultyUnlockCost(difficulty: Difficulty): number {
-  return DIFFICULTY_UNLOCK_COST[difficulty];
+  return difficultyCosts()[difficulty];
 }
 
 export function difficultyUnlocked(difficulty: Difficulty, stars = totalStars()): boolean {
-  return unlockOverride || stars >= DIFFICULTY_UNLOCK_COST[difficulty];
+  return unlockOverride || stars >= difficultyCosts()[difficulty];
 }
 
 /** The next thing the ladder will open, for the menu's progress line. */
 export function nextUnlock(): { label: string; cost: number } | null {
   const stars = totalStars();
 
+  const costs = difficultyCosts();
   for (const difficulty of DIFFICULTIES) {
-    const cost = DIFFICULTY_UNLOCK_COST[difficulty];
+    const cost = costs[difficulty];
     if (stars < cost) return { label: DIFFICULTY_PROFILES[difficulty].label, cost };
   }
-  for (const mode of MODES) {
+  for (const mode of RELEASED_MODES) {
     const cost = modeUnlockCost(mode.id);
     if (stars < cost) return { label: mode.name, cost };
   }

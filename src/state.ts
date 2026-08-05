@@ -6,11 +6,12 @@
 import {
   AI_MAX_DECISION_DELAY,
   AI_MIN_DECISION_DELAY,
+  CRUISE_SPEED_CAP,
   PLAYER_CRUISE_BASE_SPEED,
   PLAYER_MAX_SPEED,
-  buildBlueprints,
-  SPEED_TIER_CRUISE,
-  SPEED_TIER_THROTTLE
+  SPEED_BANDS,
+  THROTTLE_MARGIN,
+  buildBlueprints
 } from './config';
 import { tuning } from './difficulty';
 import { arc } from './track';
@@ -44,7 +45,10 @@ export const player: Player = {
   collisionCount: 0,
   fireball: 0,
   heat: 0,
-  travelled: 0
+  travelled: 0,
+  trail: [],
+  previousHeading: 0,
+  cornering: 0
 };
 
 export let aiCars: AiCar[] = [];
@@ -72,6 +76,9 @@ export function resetGame(): void {
   player.fireball = 0;
   player.heat = 0;
   player.travelled = 0;
+  player.trail.length = 0;
+  player.previousHeading = 0;
+  player.cornering = 0;
 
   aiCars = buildBlueprints(tuning.profile.carCount).map((blueprint, index) => {
     const distance = arc.total * blueprint.fraction;
@@ -110,16 +117,33 @@ export function baseCruiseSpeed(): number {
   return PLAYER_CRUISE_BASE_SPEED * tuning.player;
 }
 
+/**
+ * Still ten-per-tier, but only as a milestone for the audio and the celebration.
+ * Speed itself is continuous now.
+ */
 export function currentSpeedTier(combo: number = player.combo): number {
-  return Math.min(SPEED_TIER_CRUISE.length - 1, Math.floor(Math.max(0, combo) / 10));
+  return Math.min(10, Math.floor(Math.max(0, combo) / 10));
+}
+
+/** Cruise speed for a combo, walking the diminishing-return bands. */
+export function cruiseSpeedForCombo(combo: number): number {
+  let speed = PLAYER_CRUISE_BASE_SPEED;
+  let remaining = Math.max(0, combo);
+  for (const [count, step] of SPEED_BANDS) {
+    const taken = Math.min(remaining, count);
+    speed += taken * step;
+    remaining -= taken;
+    if (remaining <= 0) break;
+  }
+  return Math.min(CRUISE_SPEED_CAP, speed);
 }
 
 export function currentCruiseSpeed(): number {
-  return SPEED_TIER_CRUISE[currentSpeedTier()] * tuning.player;
+  return cruiseSpeedForCombo(player.combo) * tuning.player;
 }
 
 export function currentThrottleMaxSpeed(): number {
-  return SPEED_TIER_THROTTLE[currentSpeedTier()] * tuning.player;
+  return (cruiseSpeedForCombo(player.combo) + THROTTLE_MARGIN) * tuning.player;
 }
 
 export function currentTargetSpeed(): number {
@@ -130,6 +154,7 @@ export function currentTargetSpeed(): number {
 export function engineSnapshot(): EngineSnapshot {
   return {
     tier: currentSpeedTier(),
+    cornering: player.cornering,
     throttle: inputState.throttle,
     speed: player.speed,
     cruiseSpeed: currentCruiseSpeed(),

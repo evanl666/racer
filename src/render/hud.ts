@@ -6,26 +6,57 @@ import { modeById } from '../modes';
 import { ctx, DESIGN_W } from '../platform';
 import { run } from '../run';
 import { inputState, player } from '../state';
+import { countdownActive, countdownLabel } from '../countdown';
 import { onboardingActive, onboardingState } from '../onboarding';
 import { COLORS } from '../theme';
 import { roundRect } from './primitives';
 
 export const BACK_BUTTON = { x: DESIGN_W - 52, y: 12, w: 40, h: 40 };
 
+/**
+ * The HUD carries the best streak only. The running count pops on the car
+ * itself, so a crash never wipes the number the player is chasing.
+ */
 function drawComboPill(): void {
   ctx.fillStyle = 'rgba(8,17,25,0.66)';
-  roundRect(ctx, 12, 12, 68, 42, 13);
+  roundRect(ctx, 12, 12, 78, 44, 13);
   ctx.fill();
-  ctx.fillStyle = player.combo > 0 ? COLORS.accentLight : COLORS.text;
+
+  ctx.fillStyle = 'rgba(247,244,234,0.5)';
+  ctx.font = '700 7.5px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('BEST', 51, 24);
+
+  ctx.fillStyle = player.bestCombo > 0 ? COLORS.accentLight : COLORS.text;
   const tierPulse = player.tierBoostElapsed > 0
     ? 1 + Math.sin((PLAYER_TIER_BOOST_DURATION - player.tierBoostElapsed) * Math.PI * 8) * 0.08
     : 1;
   ctx.save();
-  ctx.translate(46, 35);
+  ctx.translate(51, 42);
   ctx.scale(tierPulse, tierPulse);
-  ctx.font = '900 25px monospace';
+  ctx.font = '900 23px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`x${player.combo}`, 0, 5);
+  ctx.fillText(`x${player.bestCombo}`, 0, 4);
+  ctx.restore();
+}
+
+/** Three, two, one. Drawn over a dimmed world that is genuinely holding still. */
+function drawCountdown(): void {
+  if (!countdownActive()) return;
+  const label = countdownLabel();
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,17,25,0.42)';
+  ctx.fillRect(0, 0, DESIGN_W, 844);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.accentLight;
+  ctx.font = '900 116px monospace';
+  ctx.fillText(label, DESIGN_W / 2, 420);
+
+  ctx.fillStyle = 'rgba(247,244,234,0.7)';
+  ctx.font = '900 13px sans-serif';
+  ctx.fillText('准备', DESIGN_W / 2, 462);
   ctx.restore();
 }
 
@@ -150,6 +181,7 @@ export function drawHud(): void {
   drawCrashBanner();
   drawBanner();
   drawOnboarding();
+  drawCountdown();
 }
 
 function drawLaneArrow(cx: number, cy: number, direction: number, color: string): void {

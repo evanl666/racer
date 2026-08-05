@@ -4,7 +4,7 @@ import { app, startDaily, startMode } from '../app';
 import { audio } from '../audio';
 import { dailyPlan } from '../daily';
 import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
-import { MODES, ORIGINAL_MODE_IDS } from '../modes';
+import { RELEASED_MODES as MODES, ORIGINAL_MODE_IDS } from '../modes';
 import { trackById } from '../tracks';
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import {

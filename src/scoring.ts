@@ -14,7 +14,7 @@ import {
 import { addHitStop, addShake } from './feel';
 import { vibrate } from './platform';
 import { beginCollision } from './player';
-import { burst } from './render/particles';
+import { burst, floatText } from './render/particles';
 import { activeMode, run } from './run';
 import { aiCars, currentSpeedTier, player } from './state';
 import { arc, circularDistance, sampleAtDistance } from './track';
@@ -148,6 +148,10 @@ export function detectOvertakes(): void {
       player.passPopElapsed = 0;
       car.passIndex = currentPassIndex;
       audio.playOvertake(player.combo, overtakes);
+
+      // The running count pops on the car itself; the HUD only ever shows the best.
+      const passPoint = sampleAtDistance(player.distance, player.visualLane);
+      floatText(passPoint.x, passPoint.y - 9, `${player.combo}`, '#C5FFF7', 13);
 
       if (newTier > previousTier) {
         player.tierBoostElapsed = PLAYER_TIER_BOOST_DURATION;

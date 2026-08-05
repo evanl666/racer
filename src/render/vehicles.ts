@@ -1,7 +1,7 @@
 /** Car sprites: one shared top-down shape, restyled per vehicle. */
 
 import { ctx } from '../platform';
-import { aiCars, player } from '../state';
+import { aiCars, currentCruiseSpeed, player } from '../state';
 import { COLORS } from '../theme';
 import { forwardPathDistance, sampleAtDistance } from '../track';
 import type { AiCar, VehicleStyle } from '../types';
@@ -142,6 +142,26 @@ function drawFireballAura(): void {
   ctx.restore();
 }
 
+/**
+ * Afterimage. Three ghosts sampled back through the trail, fading out, which
+ * reads as motion blur without costing a blur.
+ */
+function drawAfterimage(): void {
+  const trail = player.trail;
+  if (trail.length < 6 || player.state === 'CRASHED') return;
+
+  const cruise = currentCruiseSpeed();
+  const intensity = Math.min(1, Math.max(0, (player.speed - cruise * 0.95) / 140));
+  if (intensity <= 0.05) return;
+
+  for (let ghost = 1; ghost <= 3; ghost++) {
+    const index = trail.length - 1 - ghost * 3;
+    if (index < 0) break;
+    const sample = trail[index];
+    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity * (0.28 - ghost * 0.07));
+  }
+}
+
 export function drawCars(): void {
   for (const car of aiCars) {
     if (!car.alive) {
@@ -151,6 +171,7 @@ export function drawCars(): void {
     if (car.hasZone) drawZone(car);
     drawAiCar(car);
   }
+  drawAfterimage();
   drawFireballAura();
   drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
 }

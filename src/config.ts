@@ -2,17 +2,34 @@
 
 import type { AiBlueprint } from './types';
 
-export const LANE_COUNT = 6;
-export const LANE_GAP = 8.2;
+export const LANE_COUNT = 5;
+// Five lanes spread across the same road width as the old six.
+export const LANE_GAP = 9.9;
 export const ROAD_HALF_WIDTH = 27.0;
 export const PLAYER_CRUISE_BASE_SPEED = 125;
 
-// Speed is deliberately stepped, not spread across every overtake.
-// x70 reaches a true high-speed state: 515 while coasting and 600 at full throttle.
-// The last entry is the cap for x100 and above.
-export const SPEED_TIER_CRUISE = [125, 180, 240, 305, 365, 420, 470, 515, 555, 590, 620];
-export const SPEED_TIER_THROTTLE = [175, 240, 310, 380, 445, 505, 555, 600, 640, 675, 705];
-export const PLAYER_MAX_SPEED = SPEED_TIER_THROTTLE[SPEED_TIER_THROTTLE.length - 1];
+/**
+ * Speed grows on *every* overtake, in bands with diminishing returns.
+ *
+ * The stepped every-tenth-car curve made the early game feel inert and then
+ * lurched: a single pass could add sixty units. Now the first ten passes are
+ * where the acceleration is felt, and the late game creeps rather than sprints,
+ * with a much lower ceiling so high combos stay readable.
+ *
+ * Each entry is [how many overtakes this band covers, units added per overtake].
+ */
+export const SPEED_BANDS: Array<[number, number]> = [
+  [10, 6.0],
+  [15, 3.0],
+  [25, 1.5],
+  [Infinity, 0.55]
+];
+
+/** Cruise speed never exceeds this, however long the combo runs. */
+export const CRUISE_SPEED_CAP = 380;
+/** Holding the throttle adds this much on top of the cruise speed. */
+export const THROTTLE_MARGIN = 60;
+export const PLAYER_MAX_SPEED = CRUISE_SPEED_CAP + THROTTLE_MARGIN;
 export const PLAYER_ACCELERATION = 112;
 export const PLAYER_TIER_ACCELERATION = 165;
 export const PLAYER_COAST_DECELERATION = 42;

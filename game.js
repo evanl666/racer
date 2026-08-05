@@ -4102,6 +4102,174 @@ var HarborLoop = (() => {
     return { x: Math.cos(local) * distance, y: Math.sin(local) * distance };
   }
 
+  // src/render/sprites.ts
+  var CAR_LENGTH = 16.4;
+  var CAR_WIDTH = 8.6;
+  var SUPERSAMPLE = 10;
+  var SPRITE_W = Math.round(CAR_LENGTH * SUPERSAMPLE);
+  var SPRITE_H = Math.round(CAR_WIDTH * SUPERSAMPLE);
+  function roundedPath(ctx2, x, y, w, h, r) {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx2.beginPath();
+    ctx2.moveTo(x + radius, y);
+    ctx2.arcTo(x + w, y, x + w, y + h, radius);
+    ctx2.arcTo(x + w, y + h, x, y + h, radius);
+    ctx2.arcTo(x, y + h, x, y, radius);
+    ctx2.arcTo(x, y, x + w, y, radius);
+    ctx2.closePath();
+  }
+  function paintCar(ctx2, style) {
+    const w = SPRITE_W;
+    const h = SPRITE_H;
+    const cy = h / 2;
+    ctx2.clearRect(0, 0, w, h);
+    ctx2.fillStyle = "#14181B";
+    const wheelW = w * 0.155;
+    const wheelH = h * 0.15;
+    for (const wx2 of [w * 0.16, w * 0.66]) {
+      roundedPath(ctx2, wx2, h * 0.02, wheelW, wheelH, wheelH * 0.45);
+      ctx2.fill();
+      roundedPath(ctx2, wx2, h * 0.83, wheelW, wheelH, wheelH * 0.45);
+      ctx2.fill();
+    }
+    ctx2.save();
+    ctx2.globalAlpha = 0.32;
+    ctx2.fillStyle = "#05090C";
+    roundedPath(ctx2, w * 0.03, h * 0.16, w * 0.94, h * 0.74, h * 0.3);
+    ctx2.fill();
+    ctx2.restore();
+    const bodyGradient = ctx2.createLinearGradient(0, h * 0.1, w * 0.35, h);
+    bodyGradient.addColorStop(0, style.rim);
+    bodyGradient.addColorStop(0.28, style.body);
+    bodyGradient.addColorStop(1, style.side);
+    ctx2.fillStyle = bodyGradient;
+    roundedPath(ctx2, w * 0.02, h * 0.12, w * 0.96, h * 0.76, h * 0.28);
+    ctx2.fill();
+    const noseGradient = ctx2.createLinearGradient(w * 0.72, 0, w, 0);
+    noseGradient.addColorStop(0, "rgba(0,0,0,0)");
+    noseGradient.addColorStop(1, "rgba(0,0,0,0.28)");
+    ctx2.fillStyle = noseGradient;
+    roundedPath(ctx2, w * 0.02, h * 0.12, w * 0.96, h * 0.76, h * 0.28);
+    ctx2.fill();
+    const cabinGradient = ctx2.createLinearGradient(0, h * 0.2, 0, h * 0.8);
+    cabinGradient.addColorStop(0, style.cabin);
+    cabinGradient.addColorStop(1, style.side);
+    ctx2.fillStyle = cabinGradient;
+    roundedPath(ctx2, w * 0.3, h * 0.2, w * 0.34, h * 0.6, h * 0.2);
+    ctx2.fill();
+    const glassGradient = ctx2.createLinearGradient(w * 0.34, h * 0.26, w * 0.6, h * 0.74);
+    glassGradient.addColorStop(0, "#EAFBFF");
+    glassGradient.addColorStop(0.45, style.window);
+    glassGradient.addColorStop(1, "#40626E");
+    ctx2.fillStyle = glassGradient;
+    roundedPath(ctx2, w * 0.345, h * 0.27, w * 0.25, h * 0.46, h * 0.14);
+    ctx2.fill();
+    ctx2.save();
+    ctx2.globalAlpha = 0.55;
+    ctx2.fillStyle = "#FFFFFF";
+    ctx2.beginPath();
+    ctx2.moveTo(w * 0.37, h * 0.3);
+    ctx2.lineTo(w * 0.45, h * 0.3);
+    ctx2.lineTo(w * 0.4, h * 0.7);
+    ctx2.lineTo(w * 0.35, h * 0.7);
+    ctx2.closePath();
+    ctx2.fill();
+    ctx2.restore();
+    if (style.stripe) {
+      ctx2.save();
+      ctx2.globalAlpha = 0.9;
+      ctx2.fillStyle = style.stripe;
+      ctx2.fillRect(w * 0.06, cy - h * 0.055, w * 0.88, h * 0.11);
+      ctx2.restore();
+    }
+    ctx2.save();
+    ctx2.globalAlpha = 0.22;
+    ctx2.strokeStyle = "#05090C";
+    ctx2.lineWidth = Math.max(1, h * 0.02);
+    ctx2.beginPath();
+    ctx2.moveTo(w * 0.66, h * 0.18);
+    ctx2.lineTo(w * 0.66, h * 0.82);
+    ctx2.stroke();
+    ctx2.restore();
+    ctx2.fillStyle = style.lights;
+    roundedPath(ctx2, w * 0.9, h * 0.2, w * 0.07, h * 0.2, h * 0.06);
+    ctx2.fill();
+    roundedPath(ctx2, w * 0.9, h * 0.6, w * 0.07, h * 0.2, h * 0.06);
+    ctx2.fill();
+    ctx2.save();
+    ctx2.globalAlpha = 0.5;
+    ctx2.fillStyle = "#C4413A";
+    roundedPath(ctx2, w * 0.035, h * 0.26, w * 0.05, h * 0.16, h * 0.05);
+    ctx2.fill();
+    roundedPath(ctx2, w * 0.035, h * 0.58, w * 0.05, h * 0.16, h * 0.05);
+    ctx2.fill();
+    ctx2.restore();
+    ctx2.save();
+    ctx2.globalAlpha = 0.6;
+    ctx2.strokeStyle = style.rim;
+    ctx2.lineWidth = Math.max(1.4, h * 0.035);
+    ctx2.beginPath();
+    ctx2.moveTo(w * 0.12, h * 0.145);
+    ctx2.lineTo(w * 0.86, h * 0.145);
+    ctx2.stroke();
+    ctx2.restore();
+  }
+  function paintShadow(ctx2) {
+    const w = SPRITE_W;
+    const h = SPRITE_H;
+    ctx2.clearRect(0, 0, w, h);
+    ctx2.fillStyle = "#040A0E";
+    roundedPath(ctx2, w * 0.02, h * 0.12, w * 0.96, h * 0.76, h * 0.28);
+    ctx2.fill();
+  }
+  function build(paint) {
+    const canvas2 = createOffscreenCanvas(SPRITE_W, SPRITE_H);
+    const ctx2 = canvas2 ? canvas2.getContext("2d") : null;
+    if (!canvas2 || !ctx2) return null;
+    paint(ctx2);
+    return canvas2;
+  }
+  var cache2 = /* @__PURE__ */ new Map();
+  function vehicleSprite(key2, style) {
+    const cached = cache2.get(key2);
+    if (cached !== void 0) return cached;
+    const image = build((ctx2) => paintCar(ctx2, style));
+    const shadow = build(paintShadow);
+    const sprite = image && shadow ? { image, shadow } : null;
+    cache2.set(key2, sprite);
+    return sprite;
+  }
+  var ASPHALT_TILE = 96;
+  var asphaltPattern = null;
+  var asphaltTried = false;
+  function asphaltTexture(target) {
+    if (asphaltTried) return asphaltPattern;
+    asphaltTried = true;
+    const canvas2 = createOffscreenCanvas(ASPHALT_TILE, ASPHALT_TILE);
+    const ctx2 = canvas2 ? canvas2.getContext("2d") : null;
+    if (!canvas2 || !ctx2) return null;
+    ctx2.clearRect(0, 0, ASPHALT_TILE, ASPHALT_TILE);
+    for (let i = 0; i < 1400; i++) {
+      const x = Math.random() * ASPHALT_TILE;
+      const y = Math.random() * ASPHALT_TILE;
+      const light = Math.random() < 0.5;
+      ctx2.fillStyle = light ? "rgba(255,255,255,0.045)" : "rgba(0,0,0,0.06)";
+      ctx2.fillRect(x, y, 1, 1);
+    }
+    for (let i = 0; i < 180; i++) {
+      const x = Math.random() * ASPHALT_TILE;
+      const y = Math.random() * ASPHALT_TILE;
+      ctx2.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.07)";
+      ctx2.fillRect(x, y, 2, 2);
+    }
+    try {
+      asphaltPattern = target.createPattern(canvas2, "repeat");
+    } catch (error) {
+      asphaltPattern = null;
+    }
+    return asphaltPattern;
+  }
+
   // src/render/road.ts
   function drawCurbs(path, phase = 0) {
     ctx.save();
@@ -4129,6 +4297,8 @@ var HarborLoop = (() => {
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 2, COLORS.curbLight);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, COLORS.road);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 9, COLORS.roadHighlight);
+    const grain = asphaltTexture(ctx);
+    if (grain) strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, grain);
     const litRim = offsetPath(centerPath, -SHADOW_X * 1.6, -SHADOW_Y * 1.6);
     strokeClosedPath(litRim, ROAD_HALF_WIDTH * 2 + 3.4, "rgba(255,246,228,0.10)");
     const occluded = offsetPath(centerPath, SHADOW_X * 1.4, SHADOW_Y * 1.4);
@@ -4327,8 +4497,13 @@ var HarborLoop = (() => {
     side: "#080B0D",
     rim: "#5D6B72"
   };
-  function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false) {
+  function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false, spriteKey = "") {
     const p = sampleAtDistance(distance, laneIndex);
+    const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
+    if (sprite) {
+      drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn);
+      return;
+    }
     ctx.save();
     ctx.globalAlpha = alpha * 0.32;
     ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
@@ -4387,9 +4562,32 @@ var HarborLoop = (() => {
     }
     ctx.restore();
   }
+  function drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn) {
+    const halfL = CAR_LENGTH / 2;
+    const halfW = CAR_WIDTH / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.34;
+    ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
+    ctx.rotate(p.angle);
+    ctx.drawImage(sprite.shadow, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle);
+    ctx.drawImage(sprite.image, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+    if (indicatorDirection !== 0 && indicatorOn) {
+      ctx.fillStyle = "#FFD55C";
+      const indicatorY = indicatorDirection > 0 ? halfW - 0.4 : -halfW - 1;
+      ctx.fillRect(2.8, indicatorY, 3.2, 1.4);
+      ctx.fillRect(-5.5, indicatorY, 2.6, 1.4);
+    }
+    ctx.restore();
+    void style;
+  }
   function drawAiCar(car) {
     const indicatorOn = car.state === "WARNING" && Math.floor(car.stateElapsed * 30) % 2 === 0;
-    drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn);
+    drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn, "ai");
   }
   function drawWreck(car) {
     const p = sampleAtDistance(car.distance, car.visualLane);
@@ -4460,7 +4658,7 @@ var HarborLoop = (() => {
       const index = trail.length - 1 - ghost * 3;
       if (index < 0) break;
       const sample = trail[index];
-      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity2 * (0.28 - ghost * 0.07));
+      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity2 * (0.28 - ghost * 0.07), 0, false, "player");
     }
   }
   function drawCars() {
@@ -4474,7 +4672,7 @@ var HarborLoop = (() => {
     }
     drawAfterimage();
     drawFireballAura();
-    drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
+    drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha(), 0, false, "player");
   }
 
   // src/scoring.ts

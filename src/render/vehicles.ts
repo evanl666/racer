@@ -7,6 +7,7 @@ import { forwardPathDistance, sampleAtDistance } from '../track';
 import type { AiCar, VehicleStyle } from '../types';
 import { CAR_BODY_DEPTH, CAR_SHADOW_DISTANCE, SHADOW_X, SHADOW_Y, localLight } from './light';
 import { roundRect } from './primitives';
+import { CAR_LENGTH, CAR_WIDTH, vehicleSprite } from './sprites';
 
 const PLAYER_STYLE: VehicleStyle = {
   body: COLORS.player,
@@ -34,9 +35,16 @@ function drawVehicle(
   style: VehicleStyle,
   alpha = 1,
   indicatorDirection = 0,
-  indicatorOn = false
+  indicatorOn = false,
+  spriteKey = ''
 ): void {
   const p = sampleAtDistance(distance, laneIndex);
+
+  const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
+  if (sprite) {
+    drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn);
+    return;
+  }
 
   // Cast shadow first, offset in screen space so it stays put through a corner.
   // A hard offset silhouette beats a blur here: it is crisper and much cheaper.
@@ -114,9 +122,44 @@ function drawVehicle(
   ctx.restore();
 }
 
+/** Sprite playback: one shadow blit, one body blit, plus any indicator. */
+function drawSpriteVehicle(
+  p: { x: number; y: number; angle: number },
+  sprite: { image: WxCanvas; shadow: WxCanvas },
+  style: VehicleStyle,
+  alpha: number,
+  indicatorDirection: number,
+  indicatorOn: boolean
+): void {
+  const halfL = CAR_LENGTH / 2;
+  const halfW = CAR_WIDTH / 2;
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.34;
+  ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
+  ctx.rotate(p.angle);
+  ctx.drawImage(sprite.shadow as unknown as CanvasImageSource, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.angle);
+  ctx.drawImage(sprite.image as unknown as CanvasImageSource, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+
+  if (indicatorDirection !== 0 && indicatorOn) {
+    ctx.fillStyle = '#FFD55C';
+    const indicatorY = indicatorDirection > 0 ? halfW - 0.4 : -halfW - 1.0;
+    ctx.fillRect(2.8, indicatorY, 3.2, 1.4);
+    ctx.fillRect(-5.5, indicatorY, 2.6, 1.4);
+  }
+  ctx.restore();
+  void style;
+}
+
 function drawAiCar(car: AiCar): void {
   const indicatorOn = car.state === 'WARNING' && Math.floor(car.stateElapsed * 30) % 2 === 0;
-  drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn);
+  drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn, 'ai');
 }
 
 /** A destroyed car briefly leaves a scorch mark so the kill reads on screen. */
@@ -199,7 +242,7 @@ function drawAfterimage(): void {
     const index = trail.length - 1 - ghost * 3;
     if (index < 0) break;
     const sample = trail[index];
-    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity * (0.28 - ghost * 0.07));
+    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity * (0.28 - ghost * 0.07), 0, false, 'player');
   }
 }
 
@@ -214,5 +257,5 @@ export function drawCars(): void {
   }
   drawAfterimage();
   drawFireballAura();
-  drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha());
+  drawVehicle(player.distance, player.visualLane, PLAYER_STYLE, playerAlpha(), 0, false, 'player');
 }

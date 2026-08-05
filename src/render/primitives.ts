@@ -1,7 +1,12 @@
 import { ctx } from '../platform';
 import type { Vec2 } from '../types';
 
-export function strokeClosedPath(points: Vec2[], width: number, color: string, dash: number[] = []): void {
+export function strokeClosedPath(
+  points: Vec2[],
+  width: number,
+  color: string | CanvasPattern,
+  dash: number[] = []
+): void {
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);

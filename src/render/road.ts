@@ -14,6 +14,7 @@ import {
 import type { Vec2 } from '../types';
 import { ROAD_DEPTH, SHADOW_X, SHADOW_Y } from './light';
 import { offsetPath, strokeClosedPath } from './primitives';
+import { asphaltTexture } from './sprites';
 
 function drawCurbs(path: Vec2[], phase = 0): void {
   ctx.save();
@@ -46,6 +47,10 @@ export function drawTrack(): void {
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 2, COLORS.curbLight);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, COLORS.road);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 9, COLORS.roadHighlight);
+
+  // Grain, confined to the road by stroking the circuit with the pattern.
+  const grain = asphaltTexture(ctx);
+  if (grain) strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, grain);
 
   // Ambient occlusion inside the barriers, and a rim on the lit side.
   const litRim = offsetPath(centerPath, -SHADOW_X * 1.6, -SHADOW_Y * 1.6);

@@ -4650,24 +4650,77 @@ var HarborLoop = (() => {
     ctx.fill();
     ctx.restore();
   }
-  var MIN_GHOSTS = 2;
-  var MAX_GHOSTS = 6;
+  var TRAIL_SEGMENTS2 = 9;
+  var GHOSTS_MAX = 3;
+  function trailIntensity() {
+    const cruise = currentCruiseSpeed();
+    return Math.min(1, Math.max(0, (player.speed - cruise * 0.88) / 165));
+  }
   function drawAfterimage() {
     const trail = player.trail;
     if (trail.length < 4 || player.state === "CRASHED") return;
-    const cruise = currentCruiseSpeed();
-    const intensity2 = Math.min(1, Math.max(0, (player.speed - cruise * 0.9) / 180));
+    const intensity2 = trailIntensity();
     if (intensity2 <= 0.04) return;
-    const ghosts = MIN_GHOSTS + Math.round(intensity2 * (MAX_GHOSTS - MIN_GHOSTS));
-    const stride = 2 + Math.round(intensity2 * 2);
+    const stride = Math.max(1, Math.round(1 + intensity2 * 2));
+    const points = [];
+    for (let i = 0; i < TRAIL_SEGMENTS2; i++) {
+      const index = trail.length - 1 - i * stride;
+      if (index < 0) break;
+      const sample = trail[index];
+      points.push(sampleAtDistance(sample.distance, sample.lane));
+    }
+    if (points.length < 2) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let i = 0; i < points.length - 1; i++) {
+      const t = i / (points.length - 1);
+      ctx.globalAlpha = intensity2 * 0.62 * Math.pow(1 - t, 0.85);
+      ctx.strokeStyle = PLAYER_STYLE.body;
+      ctx.lineWidth = CAR_WIDTH * (0.92 - t * 0.55);
+      ctx.beginPath();
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[i + 1].x, points[i + 1].y);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < points.length - 1; i++) {
+      const t = i / (points.length - 1);
+      ctx.globalAlpha = intensity2 * 0.85 * Math.pow(1 - t, 1.4);
+      ctx.strokeStyle = "#FF7A46";
+      ctx.lineWidth = CAR_WIDTH * (0.5 - t * 0.34);
+      ctx.beginPath();
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[i + 1].x, points[i + 1].y);
+      ctx.stroke();
+    }
+    for (let i = 0; i < points.length - 1; i++) {
+      const t = i / (points.length - 1);
+      ctx.globalAlpha = intensity2 * 0.8 * Math.pow(1 - t, 2.2);
+      ctx.strokeStyle = "#FFE7B8";
+      ctx.lineWidth = CAR_WIDTH * (0.2 - t * 0.15);
+      ctx.beginPath();
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[i + 1].x, points[i + 1].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    const ghosts = 1 + Math.round(intensity2 * (GHOSTS_MAX - 1));
     for (let ghost = ghosts; ghost >= 1; ghost--) {
-      const index = trail.length - 1 - ghost * stride;
+      const index = trail.length - 1 - ghost * stride * 2;
       if (index < 0) continue;
       const sample = trail[index];
       const fade = 1 - ghost / (ghosts + 1);
-      const alpha = intensity2 * 0.4 * fade;
-      const swell = 1 + intensity2 * 0.22 * (ghost / ghosts);
-      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, alpha, 0, false, "player", swell);
+      drawVehicle(
+        sample.distance,
+        sample.lane,
+        PLAYER_STYLE,
+        intensity2 * 0.55 * fade,
+        0,
+        false,
+        "player",
+        1 + intensity2 * 0.16 * (ghost / ghosts)
+      );
     }
   }
   function drawCars() {

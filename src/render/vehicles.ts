@@ -233,37 +233,100 @@ function drawFireballAura(): void {
 /**
  * Afterimage.
  *
- * Everything about it scales with speed: how many ghosts there are, how far
- * apart they sit, and how much each one is swollen. At cruise there is nothing;
- * flat out the car drags a long widening smear, which is the clearest read on
- * speed the fixed camera allows.
+ * Faded copies of the car sprite were the wrong tool: a detailed image at low
+ * opacity turns to mush against the road instead of reading as motion. The
+ * trail is now drawn as a solid tapered ribbon along the path the car actually
+ * took — wide and saturated at the tail, narrowing into a bright core near the
+ * car — with only a couple of sprite ghosts left on top for body.
+ *
+ * Every dimension scales with speed: length, width, opacity and the number of
+ * ghosts. At cruise there is nothing at all.
  */
-const MIN_GHOSTS = 2;
-const MAX_GHOSTS = 6;
+const TRAIL_SEGMENTS = 9;
+const GHOSTS_MAX = 3;
+
+function trailIntensity(): number {
+  const cruise = currentCruiseSpeed();
+  return Math.min(1, Math.max(0, (player.speed - cruise * 0.88) / 165));
+}
 
 function drawAfterimage(): void {
   const trail = player.trail;
   if (trail.length < 4 || player.state === 'CRASHED') return;
 
-  const cruise = currentCruiseSpeed();
-  const intensity = Math.min(1, Math.max(0, (player.speed - cruise * 0.9) / 180));
+  const intensity = trailIntensity();
   if (intensity <= 0.04) return;
 
-  const ghosts = MIN_GHOSTS + Math.round(intensity * (MAX_GHOSTS - MIN_GHOSTS));
-  const stride = 2 + Math.round(intensity * 2);
+  // Sample the recorded path, newest first, at a stride that lengthens with speed.
+  const stride = Math.max(1, Math.round(1 + intensity * 2));
+  const points: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < TRAIL_SEGMENTS; i++) {
+    const index = trail.length - 1 - i * stride;
+    if (index < 0) break;
+    const sample = trail[index];
+    points.push(sampleAtDistance(sample.distance, sample.lane));
+  }
+  if (points.length < 2) return;
 
-  // Furthest ghost first, so the nearest one lands on top of the older ones.
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Outer ribbon: the body colour, widest and most opaque behind the car.
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    ctx.globalAlpha = intensity * 0.62 * Math.pow(1 - t, 0.85);
+    ctx.strokeStyle = PLAYER_STYLE.body;
+    ctx.lineWidth = CAR_WIDTH * (0.92 - t * 0.55);
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    ctx.lineTo(points[i + 1].x, points[i + 1].y);
+    ctx.stroke();
+  }
+
+  // Inner core, drawn additively. Additive blending is what separates a glow
+  // from a paint stroke: the trail brightens whatever is under it instead of
+  // covering it, which is why it reads instantly against dark asphalt.
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    ctx.globalAlpha = intensity * 0.85 * Math.pow(1 - t, 1.4);
+    ctx.strokeStyle = '#FF7A46';
+    ctx.lineWidth = CAR_WIDTH * (0.5 - t * 0.34);
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    ctx.lineTo(points[i + 1].x, points[i + 1].y);
+    ctx.stroke();
+  }
+  for (let i = 0; i < points.length - 1; i++) {
+    const t = i / (points.length - 1);
+    ctx.globalAlpha = intensity * 0.8 * Math.pow(1 - t, 2.2);
+    ctx.strokeStyle = '#FFE7B8';
+    ctx.lineWidth = CAR_WIDTH * (0.2 - t * 0.15);
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    ctx.lineTo(points[i + 1].x, points[i + 1].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // A few solid ghosts on top, so the tail still has a car in it.
+  const ghosts = 1 + Math.round(intensity * (GHOSTS_MAX - 1));
   for (let ghost = ghosts; ghost >= 1; ghost--) {
-    const index = trail.length - 1 - ghost * stride;
+    const index = trail.length - 1 - ghost * stride * 2;
     if (index < 0) continue;
     const sample = trail[index];
-
     const fade = 1 - ghost / (ghosts + 1);
-    const alpha = intensity * 0.4 * fade;
-    // The smear swells as it trails away, which is what makes it read as blur
-    // rather than as a row of copies.
-    const swell = 1 + intensity * 0.22 * (ghost / ghosts);
-    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, alpha, 0, false, 'player', swell);
+    drawVehicle(
+      sample.distance,
+      sample.lane,
+      PLAYER_STYLE,
+      intensity * 0.55 * fade,
+      0,
+      false,
+      'player',
+      1 + intensity * 0.16 * (ghost / ghosts)
+    );
   }
 }
 

@@ -68,7 +68,56 @@ export function drawTrack(): void {
   const grain = asphaltTexture(ctx);
   if (grain) fillRibbon(outerRoad, innerRoad, grain);
 
+  drawSlabSeams(outerRoad, innerRoad);
+  drawEdgeGrime(outerRoad, innerRoad);
   drawStartLine();
+}
+
+/**
+ * Transverse joints across the concrete.
+ *
+ * A single flat tone reads as paint; real slabs are cast in panels and the
+ * joints between them are the strongest cue that the surface is concrete rather
+ * than a coloured shape. Drawn straight across between the two road edges, so
+ * they follow the road through corners for free.
+ */
+const SEAM_SPACING = 6;
+
+function drawSlabSeams(outer: ReturnType<typeof projectPath>, inner: ReturnType<typeof projectPath>): void {
+  const count = Math.min(outer.length, inner.length);
+  ctx.save();
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < count; i += SEAM_SPACING) {
+    // Alternate weight so the panels do not look stamped out by a machine.
+    const heavy = Math.floor(i / SEAM_SPACING) % 3 === 0;
+    ctx.strokeStyle = heavy ? 'rgba(96,100,96,0.34)' : 'rgba(112,116,112,0.2)';
+    ctx.lineWidth = heavy ? 1.15 : 0.8;
+    ctx.beginPath();
+    ctx.moveTo(outer[i].x, outer[i].y);
+    ctx.lineTo(inner[i].x, inner[i].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * Dirt where the surface meets the edge lines.
+ *
+ * Roads are cleanest where the traffic runs and dirtiest at the margins, and
+ * that gradient is most of what separates a used surface from a new one.
+ */
+function drawEdgeGrime(outer: ReturnType<typeof projectPath>, inner: ReturnType<typeof projectPath>): void {
+  const outerGrime = edge(ROAD_HALF_WIDTH - 8.5);
+  const innerGrime = edge(-ROAD_HALF_WIDTH + 8.5);
+
+  fillRibbon(outer, outerGrime, 'rgba(112,112,100,0.22)');
+  fillRibbon(innerGrime, inner, 'rgba(112,112,100,0.22)');
+
+  // A narrower, darker band right against the line.
+  const outerDark = edge(ROAD_HALF_WIDTH - 5);
+  const innerDark = edge(-ROAD_HALF_WIDTH + 5);
+  fillRibbon(outer, outerDark, 'rgba(88,88,78,0.2)');
+  fillRibbon(innerDark, inner, 'rgba(88,88,78,0.2)');
 }
 
 /** Start/finish chequer, projected onto the plane like everything else. */

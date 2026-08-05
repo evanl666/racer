@@ -22,6 +22,17 @@ export interface Projected extends Vec2 {
   depth: number;
 }
 
+/**
+ * Top-down or tilted.
+ *
+ * The tilted camera was tried and reverted: on a portrait phone the far side of
+ * the circuit shrinks past the point where traffic can be read, and reading
+ * traffic is the entire game. The projection stays in place because the
+ * ribbon-filled road it forced is better rendering than the strokes it
+ * replaced, and because turning it back on is one constant.
+ */
+const PERSPECTIVE = false;
+
 /** Camera pitch, radians below the horizontal. Lower is a flatter, more readable table. */
 const PITCH = 0.86;
 /** Height above the plane, in design units. */
@@ -50,6 +61,12 @@ const sinPitch = Math.sin(PITCH);
 const REFERENCE = (NEAR + DESIGN_H * 0.5) * cosPitch + HEIGHT * sinPitch;
 
 export function project(x: number, y: number): Projected {
+  if (!PERSPECTIVE) {
+    // Straight overhead: design space is screen space. Depth still runs from the
+    // far edge to the near one so draw ordering does not have to special-case it.
+    return { x, y, scale: 1, depth: DESIGN_H - y };
+  }
+
   // Design y runs top (far) to bottom (near); ground distance runs the other way.
   const ground = NEAR + (DESIGN_H - y);
   const lateral = x - SCREEN_CX;

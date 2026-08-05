@@ -2262,7 +2262,9 @@ var HarborLoop = (() => {
     roadEdge: "#20282D",
     curbLight: "#F1E9D7",
     curbRed: "#D86A59",
-    road: "#626D73",
+    road: "#58636A",
+    /** Every other lane, so the channels read without dashed dividers. */
+    roadAlt: "#6E7B83",
     roadHighlight: "rgba(255,255,255,0.045)",
     lane: "rgba(246,242,226,0.55)",
     player: "#F05A47",
@@ -4030,6 +4032,7 @@ var HarborLoop = (() => {
   var debugPointerCount = () => activePointers.size;
 
   // src/render/camera.ts
+  var PERSPECTIVE = false;
   var PITCH = 0.86;
   var HEIGHT = 620;
   var NEAR = 250;
@@ -4042,6 +4045,9 @@ var HarborLoop = (() => {
   var sinPitch = Math.sin(PITCH);
   var REFERENCE = (NEAR + DESIGN_H * 0.5) * cosPitch + HEIGHT * sinPitch;
   function project(x, y) {
+    if (!PERSPECTIVE) {
+      return { x, y, scale: 1, depth: DESIGN_H - y };
+    }
     const ground = NEAR + (DESIGN_H - y);
     const lateral = x - SCREEN_CX;
     const depth = ground * cosPitch + HEIGHT * sinPitch;
@@ -4354,15 +4360,13 @@ var HarborLoop = (() => {
     const innerKerb = edge(-ROAD_HALF_WIDTH);
     fillBands(outerKerb, outerRoad, [COLORS.curbLight, COLORS.curbRed], 6);
     fillBands(innerRoad, innerKerb, [COLORS.curbRed, COLORS.curbLight], 6);
-    fillRibbon(outerRoad, innerRoad, COLORS.road);
+    for (let lane = 0; lane < LANE_COUNT; lane++) {
+      const laneOuter = projectPath(pathForLane(lane - 0.5));
+      const laneInner = projectPath(pathForLane(lane + 0.5));
+      fillRibbon(laneOuter, laneInner, lane % 2 === 0 ? COLORS.road : COLORS.roadAlt);
+    }
     const grain = asphaltTexture(ctx);
     if (grain) fillRibbon(outerRoad, innerRoad, grain);
-    for (let i = 1; i < LANE_COUNT; i++) {
-      const line = pathForLane(i - 0.5);
-      const a = projectPath(offsetPath(line, -0.55, 0));
-      const b = projectPath(offsetPath(line, 0.55, 0));
-      fillBands(a, b, [COLORS.lane, "rgba(0,0,0,0)"], 4, true);
-    }
     drawStartLine();
   }
   function drawStartLine() {

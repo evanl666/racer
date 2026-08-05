@@ -55,18 +55,17 @@ export function drawTrack(): void {
   fillBands(outerKerb, outerRoad, [COLORS.curbLight, COLORS.curbRed], 6);
   fillBands(innerRoad, innerKerb, [COLORS.curbRed, COLORS.curbLight], 6);
 
-  fillRibbon(outerRoad, innerRoad, COLORS.road);
+  // Lanes are shaded alternately rather than separated by dashed lines. Solid
+  // bands read as five distinct channels at a glance, where dashes read as
+  // texture and leave the eye to work out where one lane ends.
+  for (let lane = 0; lane < LANE_COUNT; lane++) {
+    const laneOuter = projectPath(pathForLane(lane - 0.5));
+    const laneInner = projectPath(pathForLane(lane + 0.5));
+    fillRibbon(laneOuter, laneInner, lane % 2 === 0 ? COLORS.road : COLORS.roadAlt);
+  }
 
   const grain = asphaltTexture(ctx);
   if (grain) fillRibbon(outerRoad, innerRoad, grain);
-
-  // Lane dividers: thin dashed ribbons between the lanes.
-  for (let i = 1; i < LANE_COUNT; i++) {
-    const line = pathForLane(i - 0.5);
-    const a = projectPath(offsetPath(line, -0.55, 0));
-    const b = projectPath(offsetPath(line, 0.55, 0));
-    fillBands(a, b, [COLORS.lane, 'rgba(0,0,0,0)'], 4, true);
-  }
 
   drawStartLine();
 }

@@ -1,5 +1,10 @@
 # Harbor Loop Development Notes
 
+## V0.12.1 — Back to top-down, lanes shaded instead of dashed
+
+- **相机切回正交俯视**。倾斜视角在竖屏手机上，远端的车流小到读不出来 —— 而读车流是这个游戏的全部。透视代码保留（`camera.ts` 里一个 `PERSPECTIVE` 常量），因为它逼出来的填充式路面渲染本身比原来的描边更好，而且想再打开只需要改一个常量。
+- **车道改为一深一浅交替填充，取消虚线分道线**。实心色带能一眼读出五条独立通道；虚线读起来是纹理，眼睛还得自己判断车道边界在哪。
+
 ## V0.12.0 — Real perspective, in Canvas 2D
 
 画面"不够立体"的根本解决：**给地平面加一个真正的 3D 相机**，不换引擎、不用 WebGL。

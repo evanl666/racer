@@ -10,7 +10,9 @@ export const COLORS = {
   roadEdge: '#20282D',
   curbLight: '#F1E9D7',
   curbRed: '#D86A59',
-  road: '#626D73',
+  road: '#58636A',
+  /** Every other lane, so the channels read without dashed dividers. */
+  roadAlt: '#6E7B83',
   roadHighlight: 'rgba(255,255,255,0.045)',
   lane: 'rgba(246,242,226,0.55)',
   player: '#F05A47',

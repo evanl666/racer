@@ -322,3 +322,47 @@ export function waterTexture(target: CanvasRenderingContext2D): CanvasPattern | 
   }
   return waterPattern;
 }
+
+
+const GRASS_TILE = 72;
+
+let grassPattern: CanvasPattern | null = null;
+let grassTried = false;
+
+/**
+ * Tileable grass. Short strokes at mixed angles and tones: flat green reads as
+ * a shape cut out of paper, and the banks are a large enough share of the frame
+ * for that to matter.
+ */
+export function grassTexture(target: CanvasRenderingContext2D): CanvasPattern | null {
+  if (grassTried) return grassPattern;
+  grassTried = true;
+
+  const canvas = createOffscreenCanvas(GRASS_TILE, GRASS_TILE);
+  const ctx = canvas ? canvas.getContext('2d') : null;
+  if (!canvas || !ctx) return null;
+
+  ctx.clearRect(0, 0, GRASS_TILE, GRASS_TILE);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < 520; i++) {
+    const x = Math.random() * GRASS_TILE;
+    const y = Math.random() * GRASS_TILE;
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
+    const length = 1.6 + Math.random() * 2.4;
+    const light = Math.random() < 0.5;
+    ctx.strokeStyle = light ? 'rgba(255,255,235,0.13)' : 'rgba(80,96,50,0.16)';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    ctx.stroke();
+  }
+
+  try {
+    grassPattern = target.createPattern(canvas as unknown as CanvasImageSource, 'repeat');
+  } catch (error) {
+    grassPattern = null;
+  }
+  return grassPattern;
+}

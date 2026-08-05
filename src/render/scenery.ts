@@ -3,7 +3,7 @@
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import { COLORS } from '../theme';
 import { activeTrackId } from '../track';
-import { waterTexture } from './sprites';
+import { grassTexture, waterTexture } from './sprites';
 import { trackById } from '../tracks';
 import { project } from './camera';
 import { ISLAND_DEPTH, SHADOW_X, SHADOW_Y } from './light';
@@ -270,6 +270,12 @@ export function drawBackground(): void {
     quad(x - 4, y - 4, w + 8, h + 8);
     ctx.fillStyle = i % 2 === 0 ? COLORS.land : COLORS.landLight;
     quad(x, y, w, h);
+
+    const grass = grassTexture(ctx);
+    if (grass) {
+      ctx.fillStyle = grass;
+      quad(x, y, w, h);
+    }
   });
 
   for (const [x, y, size] of decor.trees) {

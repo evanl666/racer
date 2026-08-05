@@ -4388,6 +4388,37 @@ var HarborLoop = (() => {
     }
     return waterPattern;
   }
+  var GRASS_TILE = 72;
+  var grassPattern = null;
+  var grassTried = false;
+  function grassTexture(target) {
+    if (grassTried) return grassPattern;
+    grassTried = true;
+    const canvas2 = createOffscreenCanvas(GRASS_TILE, GRASS_TILE);
+    const ctx2 = canvas2 ? canvas2.getContext("2d") : null;
+    if (!canvas2 || !ctx2) return null;
+    ctx2.clearRect(0, 0, GRASS_TILE, GRASS_TILE);
+    ctx2.lineCap = "round";
+    ctx2.lineWidth = 1;
+    for (let i = 0; i < 520; i++) {
+      const x = Math.random() * GRASS_TILE;
+      const y = Math.random() * GRASS_TILE;
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
+      const length = 1.6 + Math.random() * 2.4;
+      const light = Math.random() < 0.5;
+      ctx2.strokeStyle = light ? "rgba(255,255,235,0.13)" : "rgba(80,96,50,0.16)";
+      ctx2.beginPath();
+      ctx2.moveTo(x, y);
+      ctx2.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+      ctx2.stroke();
+    }
+    try {
+      grassPattern = target.createPattern(canvas2, "repeat");
+    } catch (error) {
+      grassPattern = null;
+    }
+    return grassPattern;
+  }
 
   // src/render/road.ts
   function edge(offset) {
@@ -4712,6 +4743,11 @@ var HarborLoop = (() => {
       quad(x - 4, y - 4, w + 8, h + 8);
       ctx.fillStyle = i % 2 === 0 ? COLORS.land : COLORS.landLight;
       quad(x, y, w, h);
+      const grass = grassTexture(ctx);
+      if (grass) {
+        ctx.fillStyle = grass;
+        quad(x, y, w, h);
+      }
     });
     for (const [x, y, size] of decor.trees) {
       const p = project(x, y);

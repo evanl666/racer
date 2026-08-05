@@ -1,6 +1,6 @@
 {
   "name": "harbor-loop",
-  "version": "0.13.1",
+  "version": "0.13.4",
   "private": true,
   "description": "Harbor Loop - WeChat Mini Game racing prototype",
   "scripts": {

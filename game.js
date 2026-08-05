@@ -3154,6 +3154,9 @@ var HarborLoop = (() => {
     context3.arcTo(x, y, x + w, y, radius);
     context3.closePath();
   }
+  function offsetPath(points, dx, dy) {
+    return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+  }
 
   // src/render/hud.ts
   var BACK_BUTTON = { x: DESIGN_W - 52, y: 12, w: 40, h: 40 };
@@ -4086,6 +4089,19 @@ var HarborLoop = (() => {
     ctx.restore();
   }
 
+  // src/render/light.ts
+  var LIGHT_ANGLE = Math.PI * 0.32;
+  var SHADOW_X = Math.cos(LIGHT_ANGLE);
+  var SHADOW_Y = Math.sin(LIGHT_ANGLE);
+  var CAR_SHADOW_DISTANCE = 3.2;
+  var CAR_BODY_DEPTH = 1.5;
+  var ISLAND_DEPTH = 3.4;
+  var ROAD_DEPTH = 5;
+  function localLight(angle, distance) {
+    const local = LIGHT_ANGLE - angle;
+    return { x: Math.cos(local) * distance, y: Math.sin(local) * distance };
+  }
+
   // src/render/road.ts
   function drawCurbs(path, phase = 0) {
     ctx.save();
@@ -4104,11 +4120,19 @@ var HarborLoop = (() => {
     ctx.restore();
   }
   function drawTrack() {
+    const shadowPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH, SHADOW_Y * ROAD_DEPTH);
+    strokeClosedPath(shadowPath, ROAD_HALF_WIDTH * 2 + 13, "rgba(4,12,18,0.5)");
+    const wallPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH * 0.45, SHADOW_Y * ROAD_DEPTH * 0.45);
+    strokeClosedPath(wallPath, ROAD_HALF_WIDTH * 2 + 9, "#121A20");
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 12, COLORS.roadShadow);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 7, COLORS.roadEdge);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 2, COLORS.curbLight);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, COLORS.road);
     strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 9, COLORS.roadHighlight);
+    const litRim = offsetPath(centerPath, -SHADOW_X * 1.6, -SHADOW_Y * 1.6);
+    strokeClosedPath(litRim, ROAD_HALF_WIDTH * 2 + 3.4, "rgba(255,246,228,0.10)");
+    const occluded = offsetPath(centerPath, SHADOW_X * 1.4, SHADOW_Y * 1.4);
+    strokeClosedPath(occluded, ROAD_HALF_WIDTH * 2 - 1, "rgba(6,14,20,0.16)");
     drawCurbs(outerRoadEdgePath, 0);
     drawCurbs(innerRoadEdgePath, 8);
     for (const dividerPath of laneDividerPaths) {
@@ -4193,6 +4217,12 @@ var HarborLoop = (() => {
     }
     const decor = trackById(activeTrackId).decor;
     decor.medians.forEach(([x, y, w, h], i) => {
+      ctx.fillStyle = "rgba(4,12,18,0.42)";
+      roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH, y - 4 + SHADOW_Y * ISLAND_DEPTH, w + 8, h + 8, 12);
+      ctx.fill();
+      ctx.fillStyle = "#5A7043";
+      roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH * 0.5, y - 4 + SHADOW_Y * ISLAND_DEPTH * 0.5, w + 8, h + 8, 12);
+      ctx.fill();
       ctx.fillStyle = COLORS.landDark;
       roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 12);
       ctx.fill();
@@ -4212,6 +4242,22 @@ var HarborLoop = (() => {
       ctx.arc(x, y - 2.8, 1.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    drawVignette();
+  }
+  function drawVignette() {
+    const gradient = ctx.createRadialGradient(
+      DESIGN_W * 0.42,
+      DESIGN_H * 0.38,
+      DESIGN_H * 0.18,
+      DESIGN_W * 0.5,
+      DESIGN_H * 0.5,
+      DESIGN_H * 0.72
+    );
+    gradient.addColorStop(0, "rgba(255,250,235,0.05)");
+    gradient.addColorStop(0.55, "rgba(0,0,0,0)");
+    gradient.addColorStop(1, "rgba(2,8,13,0.5)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
   }
 
   // src/render/staticLayer.ts
@@ -4268,34 +4314,63 @@ var HarborLoop = (() => {
     cabin: COLORS.playerLight,
     window: COLORS.window,
     lights: "#FFE6A4",
-    stripe: COLORS.playerStripe
+    stripe: COLORS.playerStripe,
+    side: "#9E2C22",
+    rim: "#FFC9B2"
   };
   var AI_STYLE = {
     body: COLORS.ai,
     cabin: COLORS.aiLight,
     window: COLORS.aiWindow,
     lights: "#C5D3D8",
-    stripe: null
+    stripe: null,
+    side: "#080B0D",
+    rim: "#5D6B72"
   };
   function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false) {
     const p = sampleAtDistance(distance, laneIndex);
     ctx.save();
+    ctx.globalAlpha = alpha * 0.32;
+    ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
+    ctx.rotate(p.angle);
+    ctx.fillStyle = "#050D13";
+    roundRect(ctx, -7.8, -4, 15.6, 8, 2.8);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    ctx.shadowColor = "rgba(0,0,0,0.28)";
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 1.8;
+    const depth = localLight(p.angle, CAR_BODY_DEPTH);
+    ctx.fillStyle = style.side;
+    roundRect(ctx, -7.8 + depth.x, -4 + depth.y, 15.6, 8, 2.8);
+    ctx.fill();
     ctx.fillStyle = style.body;
     roundRect(ctx, -7.8, -4, 15.6, 8, 2.8);
     ctx.fill();
-    ctx.shadowColor = "transparent";
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.strokeStyle = style.rim;
+    ctx.lineWidth = 0.7;
+    roundRect(ctx, -7.55 - depth.x * 0.35, -3.75 - depth.y * 0.35, 15.1, 7.5, 2.6);
+    ctx.stroke();
+    ctx.restore();
+    const cabinDepth = localLight(p.angle, CAR_BODY_DEPTH * 0.6);
+    ctx.fillStyle = style.side;
+    roundRect(ctx, -2.7 + cabinDepth.x, -3.05 + cabinDepth.y, 6.9, 6.1, 1.9);
+    ctx.fill();
     ctx.fillStyle = style.cabin;
     roundRect(ctx, -2.7, -3.05, 6.9, 6.1, 1.9);
     ctx.fill();
     ctx.fillStyle = style.window;
     roundRect(ctx, -1.35, -2.3, 4.2, 4.6, 1.2);
     ctx.fill();
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.55;
+    ctx.fillStyle = "#FFFFFF";
+    roundRect(ctx, -1.1 - cabinDepth.x, -2.05 - cabinDepth.y, 1.7, 4, 0.8);
+    ctx.fill();
+    ctx.restore();
     if (style.stripe) {
       ctx.fillStyle = style.stripe;
       roundRect(ctx, -6.7, -0.55, 10.6, 1.1, 0.55);

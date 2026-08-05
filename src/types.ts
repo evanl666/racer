@@ -84,6 +84,10 @@ export interface VehicleStyle {
   window: string;
   lights: string;
   stripe: string | null;
+  /** Extruded side face, drawn offset down-light under the top face. */
+  side: string;
+  /** Rim light along the lit edge. */
+  rim: string;
 }
 
 export type ControlKind = 'lane' | 'throttle';

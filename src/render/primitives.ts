@@ -33,3 +33,9 @@ export function roundRect(
   context.arcTo(x, y, x + w, y, radius);
   context.closePath();
 }
+
+
+/** A copy of a path translated by (dx, dy), for cast shadows and bevels. */
+export function offsetPath(points: Vec2[], dx: number, dy: number): Vec2[] {
+  return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+}

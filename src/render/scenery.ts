@@ -4,6 +4,7 @@ import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import { COLORS } from '../theme';
 import { activeTrackId } from '../track';
 import { trackById } from '../tracks';
+import { ISLAND_DEPTH, SHADOW_X, SHADOW_Y } from './light';
 import { roundRect } from './primitives';
 
 function drawTree(x: number, y: number, size = 1): void {
@@ -64,6 +65,15 @@ export function drawBackground(): void {
   const decor = trackById(activeTrackId).decor;
 
   decor.medians.forEach(([x, y, w, h], i) => {
+    // Shadow, side wall, then the top: the same three passes the road uses.
+    ctx.fillStyle = 'rgba(4,12,18,0.42)';
+    roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH, y - 4 + SHADOW_Y * ISLAND_DEPTH, w + 8, h + 8, 12);
+    ctx.fill();
+
+    ctx.fillStyle = '#5A7043';
+    roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH * 0.5, y - 4 + SHADOW_Y * ISLAND_DEPTH * 0.5, w + 8, h + 8, 12);
+    ctx.fill();
+
     ctx.fillStyle = COLORS.landDark;
     roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 12);
     ctx.fill();
@@ -82,4 +92,22 @@ export function drawBackground(): void {
     ctx.fillStyle = 'rgba(232,112,79,0.85)';
     ctx.beginPath(); ctx.arc(x, y - 2.8, 1.2, 0, Math.PI * 2); ctx.fill();
   }
+
+  drawVignette();
+}
+
+/**
+ * A soft darkening at the edges. Costs one gradient in the cached layer and
+ * does more for the sense of a lit scene than any single other change.
+ */
+function drawVignette(): void {
+  const gradient = ctx.createRadialGradient(
+    DESIGN_W * 0.42, DESIGN_H * 0.38, DESIGN_H * 0.18,
+    DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_H * 0.72
+  );
+  gradient.addColorStop(0, 'rgba(255,250,235,0.05)');
+  gradient.addColorStop(0.55, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(2,8,13,0.5)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 }

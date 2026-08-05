@@ -12,7 +12,8 @@ import {
   sampleAtDistance
 } from '../track';
 import type { Vec2 } from '../types';
-import { strokeClosedPath } from './primitives';
+import { ROAD_DEPTH, SHADOW_X, SHADOW_Y } from './light';
+import { offsetPath, strokeClosedPath } from './primitives';
 
 function drawCurbs(path: Vec2[], phase = 0): void {
   ctx.save();
@@ -32,11 +33,25 @@ function drawCurbs(path: Vec2[], phase = 0): void {
 }
 
 export function drawTrack(): void {
+  // Cast shadow on the water, offset down-light: the deck floats above it.
+  const shadowPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH, SHADOW_Y * ROAD_DEPTH);
+  strokeClosedPath(shadowPath, ROAD_HALF_WIDTH * 2 + 13, 'rgba(4,12,18,0.5)');
+
+  // Deck side wall, then the deck itself sitting on top of it.
+  const wallPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH * 0.45, SHADOW_Y * ROAD_DEPTH * 0.45);
+  strokeClosedPath(wallPath, ROAD_HALF_WIDTH * 2 + 9, '#121A20');
+
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 12, COLORS.roadShadow);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 7, COLORS.roadEdge);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 2, COLORS.curbLight);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, COLORS.road);
   strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 9, COLORS.roadHighlight);
+
+  // Ambient occlusion inside the barriers, and a rim on the lit side.
+  const litRim = offsetPath(centerPath, -SHADOW_X * 1.6, -SHADOW_Y * 1.6);
+  strokeClosedPath(litRim, ROAD_HALF_WIDTH * 2 + 3.4, 'rgba(255,246,228,0.10)');
+  const occluded = offsetPath(centerPath, SHADOW_X * 1.4, SHADOW_Y * 1.4);
+  strokeClosedPath(occluded, ROAD_HALF_WIDTH * 2 - 1, 'rgba(6,14,20,0.16)');
 
   drawCurbs(outerRoadEdgePath, 0);
   drawCurbs(innerRoadEdgePath, 8);

@@ -5,6 +5,7 @@ import { aiCars, currentCruiseSpeed, player } from '../state';
 import { COLORS } from '../theme';
 import { forwardPathDistance, sampleAtDistance } from '../track';
 import type { AiCar, VehicleStyle } from '../types';
+import { CAR_BODY_DEPTH, CAR_SHADOW_DISTANCE, SHADOW_X, SHADOW_Y, localLight } from './light';
 import { roundRect } from './primitives';
 
 const PLAYER_STYLE: VehicleStyle = {
@@ -12,7 +13,9 @@ const PLAYER_STYLE: VehicleStyle = {
   cabin: COLORS.playerLight,
   window: COLORS.window,
   lights: '#FFE6A4',
-  stripe: COLORS.playerStripe
+  stripe: COLORS.playerStripe,
+  side: '#9E2C22',
+  rim: '#FFC9B2'
 };
 
 const AI_STYLE: VehicleStyle = {
@@ -20,7 +23,9 @@ const AI_STYLE: VehicleStyle = {
   cabin: COLORS.aiLight,
   window: COLORS.aiWindow,
   lights: '#C5D3D8',
-  stripe: null
+  stripe: null,
+  side: '#080B0D',
+  rim: '#5D6B72'
 };
 
 function drawVehicle(
@@ -32,20 +37,48 @@ function drawVehicle(
   indicatorOn = false
 ): void {
   const p = sampleAtDistance(distance, laneIndex);
+
+  // Cast shadow first, offset in screen space so it stays put through a corner.
+  // A hard offset silhouette beats a blur here: it is crisper and much cheaper.
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.32;
+  ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
+  ctx.rotate(p.angle);
+  ctx.fillStyle = '#050D13';
+  roundRect(ctx, -7.8, -4.0, 15.6, 8.0, 2.8);
+  ctx.fill();
+  ctx.restore();
+
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(p.x, p.y);
   ctx.rotate(p.angle);
 
-  ctx.shadowColor = 'rgba(0,0,0,0.28)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 1.8;
+  // Side face, offset down-light, gives the body its thickness.
+  const depth = localLight(p.angle, CAR_BODY_DEPTH);
+  ctx.fillStyle = style.side;
+  roundRect(ctx, -7.8 + depth.x, -4.0 + depth.y, 15.6, 8.0, 2.8);
+  ctx.fill();
 
+  // Top face.
   ctx.fillStyle = style.body;
   roundRect(ctx, -7.8, -4.0, 15.6, 8.0, 2.8);
   ctx.fill();
 
-  ctx.shadowColor = 'transparent';
+  // Rim light along the lit edge: the cue that separates a box from a rectangle.
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = style.rim;
+  ctx.lineWidth = 0.7;
+  roundRect(ctx, -7.55 - depth.x * 0.35, -3.75 - depth.y * 0.35, 15.1, 7.5, 2.6);
+  ctx.stroke();
+  ctx.restore();
+
+  // Cabin, raised again above the body.
+  const cabinDepth = localLight(p.angle, CAR_BODY_DEPTH * 0.6);
+  ctx.fillStyle = style.side;
+  roundRect(ctx, -2.7 + cabinDepth.x, -3.05 + cabinDepth.y, 6.9, 6.1, 1.9);
+  ctx.fill();
   ctx.fillStyle = style.cabin;
   roundRect(ctx, -2.7, -3.05, 6.9, 6.1, 1.9);
   ctx.fill();
@@ -53,6 +86,14 @@ function drawVehicle(
   ctx.fillStyle = style.window;
   roundRect(ctx, -1.35, -2.3, 4.2, 4.6, 1.2);
   ctx.fill();
+
+  // Glass highlight, on the lit side of the window.
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.55;
+  ctx.fillStyle = '#FFFFFF';
+  roundRect(ctx, -1.1 - cabinDepth.x, -2.05 - cabinDepth.y, 1.7, 4.0, 0.8);
+  ctx.fill();
+  ctx.restore();
 
   if (style.stripe) {
     ctx.fillStyle = style.stripe;

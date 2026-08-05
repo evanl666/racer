@@ -4343,6 +4343,51 @@ var HarborLoop = (() => {
     }
     return asphaltPattern;
   }
+  var WATER_TILE = 128;
+  var waterPattern = null;
+  var waterTried = false;
+  function waterTexture(target) {
+    if (waterTried) return waterPattern;
+    waterTried = true;
+    const canvas2 = createOffscreenCanvas(WATER_TILE, WATER_TILE);
+    const ctx2 = canvas2 ? canvas2.getContext("2d") : null;
+    if (!canvas2 || !ctx2) return null;
+    ctx2.clearRect(0, 0, WATER_TILE, WATER_TILE);
+    ctx2.lineCap = "round";
+    const bands = [
+      { cycles: 3, amplitude: 3.2, spacing: 9, alpha: 0.1, width: 1.5, phase: 0 },
+      { cycles: 5, amplitude: 2, spacing: 14, alpha: 0.07, width: 1.1, phase: 1.7 },
+      { cycles: 2, amplitude: 4.4, spacing: 21, alpha: 0.06, width: 2.4, phase: 3.1 }
+    ];
+    for (const band of bands) {
+      ctx2.strokeStyle = `rgba(255,255,255,${band.alpha})`;
+      ctx2.lineWidth = band.width;
+      for (let y = 0; y < WATER_TILE; y += band.spacing) {
+        ctx2.beginPath();
+        for (let x = 0; x <= WATER_TILE; x += 4) {
+          const wave = Math.sin(x / WATER_TILE * Math.PI * 2 * band.cycles + band.phase + y * 0.11);
+          const yy = y + wave * band.amplitude;
+          if (x === 0) ctx2.moveTo(x, yy);
+          else ctx2.lineTo(x, yy);
+        }
+        ctx2.stroke();
+      }
+    }
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * WATER_TILE;
+      const y = Math.random() * WATER_TILE;
+      ctx2.fillStyle = "rgba(255,255,255,0.16)";
+      ctx2.beginPath();
+      ctx2.ellipse(x, y, 2.6, 0.9, 0, 0, Math.PI * 2);
+      ctx2.fill();
+    }
+    try {
+      waterPattern = target.createPattern(canvas2, "repeat");
+    } catch (error) {
+      waterPattern = null;
+    }
+    return waterPattern;
+  }
 
   // src/render/road.ts
   function edge(offset) {
@@ -4379,11 +4424,26 @@ var HarborLoop = (() => {
     }
     const grain = asphaltTexture(ctx);
     if (grain) fillRibbon(outerRoad, innerRoad, grain);
+    drawSlabVariation(outerRoad, innerRoad);
     drawSlabSeams(outerRoad, innerRoad);
     drawEdgeGrime(outerRoad, innerRoad);
     drawStartLine();
   }
   var SEAM_SPACING = 6;
+  function drawSlabVariation(outer, inner) {
+    const count = Math.min(outer.length, inner.length);
+    for (let i = 0; i < count - SEAM_SPACING; i += SEAM_SPACING) {
+      const panel2 = Math.floor(i / SEAM_SPACING);
+      const shade = Math.sin(panel2 * 12.9898) * 43758.5453;
+      const tone = shade - Math.floor(shade);
+      if (tone > 0.62) continue;
+      const end = Math.min(count - 1, i + SEAM_SPACING);
+      const top = outer.slice(i, end + 1);
+      const bottom = inner.slice(i, end + 1);
+      const light = tone < 0.31;
+      fillRibbon(top, bottom, light ? "rgba(255,255,250,0.05)" : "rgba(96,100,96,0.05)");
+    }
+  }
   function drawSlabSeams(outer, inner) {
     const count = Math.min(outer.length, inner.length);
     ctx.save();
@@ -4632,16 +4692,10 @@ var HarborLoop = (() => {
     gradient.addColorStop(1, "#94AEBA");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
-    ctx.strokeStyle = COLORS.waterLine;
-    ctx.lineWidth = 1;
-    for (let y = 102; y < 690; y += 20) {
-      ctx.beginPath();
-      for (let x = 0; x <= DESIGN_W; x += 18) {
-        const yy = y + Math.sin((x + y) * 0.038) * 1.7;
-        if (x === 0) ctx.moveTo(x, yy);
-        else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
+    const ripple = waterTexture(ctx);
+    if (ripple) {
+      ctx.fillStyle = ripple;
+      ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
     }
     const decor = trackById(activeTrackId).decor;
     const quad = (x, y, w, h, dx = 0, dy = 0) => {

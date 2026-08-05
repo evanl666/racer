@@ -257,3 +257,68 @@ export function asphaltTexture(target: CanvasRenderingContext2D): CanvasPattern 
   }
   return asphaltPattern;
 }
+
+
+const WATER_TILE = 128;
+
+let waterPattern: CanvasPattern | null = null;
+let waterTried = false;
+
+/**
+ * Tileable water ripple.
+ *
+ * The old water was a gradient with evenly spaced horizontal lines, which reads
+ * as ruled paper. Real water has ripples at several scales with no repeating
+ * rhythm, so this lays down three bands of soft wave crests at different
+ * frequencies and offsets, wrapped so the tile is seamless.
+ */
+export function waterTexture(target: CanvasRenderingContext2D): CanvasPattern | null {
+  if (waterTried) return waterPattern;
+  waterTried = true;
+
+  const canvas = createOffscreenCanvas(WATER_TILE, WATER_TILE);
+  const ctx = canvas ? canvas.getContext('2d') : null;
+  if (!canvas || !ctx) return null;
+
+  ctx.clearRect(0, 0, WATER_TILE, WATER_TILE);
+  ctx.lineCap = 'round';
+
+  // Whole numbers of cycles across the tile keep the seams invisible.
+  const bands = [
+    { cycles: 3, amplitude: 3.2, spacing: 9, alpha: 0.10, width: 1.5, phase: 0 },
+    { cycles: 5, amplitude: 2.0, spacing: 14, alpha: 0.07, width: 1.1, phase: 1.7 },
+    { cycles: 2, amplitude: 4.4, spacing: 21, alpha: 0.06, width: 2.4, phase: 3.1 }
+  ];
+
+  for (const band of bands) {
+    ctx.strokeStyle = `rgba(255,255,255,${band.alpha})`;
+    ctx.lineWidth = band.width;
+    for (let y = 0; y < WATER_TILE; y += band.spacing) {
+      ctx.beginPath();
+      for (let x = 0; x <= WATER_TILE; x += 4) {
+        const wave = Math.sin((x / WATER_TILE) * Math.PI * 2 * band.cycles + band.phase + y * 0.11);
+        const yy = y + wave * band.amplitude;
+        if (x === 0) ctx.moveTo(x, yy);
+        else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // A sparse scatter of brighter glints, for the sense of a moving surface.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * WATER_TILE;
+    const y = Math.random() * WATER_TILE;
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 2.6, 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  try {
+    waterPattern = target.createPattern(canvas as unknown as CanvasImageSource, 'repeat');
+  } catch (error) {
+    waterPattern = null;
+  }
+  return waterPattern;
+}

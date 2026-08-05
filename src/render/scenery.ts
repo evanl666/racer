@@ -3,6 +3,7 @@
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import { COLORS } from '../theme';
 import { activeTrackId } from '../track';
+import { waterTexture } from './sprites';
 import { trackById } from '../tracks';
 import { project } from './camera';
 import { ISLAND_DEPTH, SHADOW_X, SHADOW_Y } from './light';
@@ -242,16 +243,10 @@ export function drawBackground(): void {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
-  ctx.strokeStyle = COLORS.waterLine;
-  ctx.lineWidth = 1;
-  for (let y = 102; y < 690; y += 20) {
-    ctx.beginPath();
-    for (let x = 0; x <= DESIGN_W; x += 18) {
-      const yy = y + Math.sin((x + y) * 0.038) * 1.7;
-      if (x === 0) ctx.moveTo(x, yy);
-      else ctx.lineTo(x, yy);
-    }
-    ctx.stroke();
+  const ripple = waterTexture(ctx);
+  if (ripple) {
+    ctx.fillStyle = ripple;
+    ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
   }
 
   // Decor follows the circuit: each track declares where its dry land is, so

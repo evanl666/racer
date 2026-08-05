@@ -68,6 +68,7 @@ export function drawTrack(): void {
   const grain = asphaltTexture(ctx);
   if (grain) fillRibbon(outerRoad, innerRoad, grain);
 
+  drawSlabVariation(outerRoad, innerRoad);
   drawSlabSeams(outerRoad, innerRoad);
   drawEdgeGrime(outerRoad, innerRoad);
   drawStartLine();
@@ -82,6 +83,28 @@ export function drawTrack(): void {
  * they follow the road through corners for free.
  */
 const SEAM_SPACING = 6;
+
+/**
+ * Slight tone differences between panels. Concrete is poured in batches and no
+ * two cure identically; without this the joints look scored into one sheet
+ * rather than drawn between separate slabs.
+ */
+function drawSlabVariation(outer: ReturnType<typeof projectPath>, inner: ReturnType<typeof projectPath>): void {
+  const count = Math.min(outer.length, inner.length);
+  for (let i = 0; i < count - SEAM_SPACING; i += SEAM_SPACING) {
+    const panel = Math.floor(i / SEAM_SPACING);
+    // Deterministic, so a circuit looks the same every time it is loaded.
+    const shade = Math.sin(panel * 12.9898) * 43758.5453;
+    const tone = shade - Math.floor(shade);
+    if (tone > 0.62) continue;
+
+    const end = Math.min(count - 1, i + SEAM_SPACING);
+    const top = outer.slice(i, end + 1);
+    const bottom = inner.slice(i, end + 1);
+    const light = tone < 0.31;
+    fillRibbon(top, bottom, light ? 'rgba(255,255,250,0.05)' : 'rgba(96,100,96,0.05)');
+  }
+}
 
 function drawSlabSeams(outer: ReturnType<typeof projectPath>, inner: ReturnType<typeof projectPath>): void {
   const count = Math.min(outer.length, inner.length);

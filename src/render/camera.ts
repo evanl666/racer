@@ -31,16 +31,21 @@ export interface Projected extends Vec2 {
  * ribbon-filled road it forced is better rendering than the strokes it
  * replaced, and because turning it back on is one constant.
  */
-const PERSPECTIVE = false;
+const PERSPECTIVE = true;
 
-/** Camera pitch, radians below the horizontal. Lower is a flatter, more readable table. */
-const PITCH = 0.86;
+/**
+ * A shallow pitch on a long lens. The steep version was tried and reverted:
+ * it shrank the far side of the circuit past the point where traffic could be
+ * read. This keeps the near-to-far size ratio under two, which is enough to
+ * feel like a solid table without costing legibility.
+ */
+const PITCH = 0.30;
 /** Height above the plane, in design units. */
-const HEIGHT = 620;
+const HEIGHT = 900;
 /** Ground distance from the camera to the nearest edge of the design area. */
-const NEAR = 250;
+const NEAR = 700;
 /** Focal length. Larger is a longer lens and a weaker perspective. */
-const FOCAL = 700;
+const FOCAL = 1400;
 
 /**
  * Where the projected scene sits and how much of the frame it fills.
@@ -50,9 +55,9 @@ const FOCAL = 700;
  * fills the frame without pushing the near edge of the track off the sides.
  */
 const SCREEN_CX = DESIGN_W / 2;
-const SCREEN_CY = DESIGN_H * 0.56;
-const FIT_X = 1.04;
-const FIT_Y = 1.74;
+const SCREEN_CY = DESIGN_H * -0.30;
+const FIT_X = 0.94;
+const FIT_Y = 1.02;
 
 const cosPitch = Math.cos(PITCH);
 const sinPitch = Math.sin(PITCH);

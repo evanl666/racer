@@ -320,21 +320,33 @@ var HarborLoop = (() => {
     trees: [[194, 119, 0.4], [265, 209, 0.38], [205, 299, 0.4], [204, 479, 0.4], [265, 569, 0.38]],
     umbrellas: [[242, 119, 0.38], [252, 389, 0.38], [220, 659, 0.38]],
     buoys: [[26, 128], [365, 250], [25, 628], [366, 650]],
-    boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]]
+    boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]],
+    rocks: [[-14, 24, 96, 74, 3], [318, 18, 96, 66, 7], [-16, 690, 92, 80, 11], [322, 700, 92, 74, 5]],
+    buildings: [[196, 748, 92, 40, 0], [300, 752, 58, 32, 0], [96, 754, 54, 30, 0]],
+    bridges: [[358, 150, 388, 150, 13], [4, 320, 32, 320, 13], [358, 440, 388, 440, 13], [4, 570, 32, 570, 13]],
+    chequers: [[130, 742, 54, 26, 0]]
   };
   var GRAND_OVAL_DECOR = {
     medians: [[170, 216, 50, 356]],
     trees: [[195, 252, 0.42], [195, 400, 0.42], [195, 540, 0.42]],
     umbrellas: [[195, 326, 0.4], [195, 468, 0.4]],
     buoys: [[40, 150], [352, 210], [40, 640], [352, 620]],
-    boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]]
+    boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]],
+    rocks: [[-18, 40, 88, 88, 2], [326, 46, 88, 82, 9], [-18, 660, 88, 84, 6], [326, 668, 88, 80, 13]],
+    buildings: [[150, 736, 96, 38, 0], [260, 742, 60, 30, 0]],
+    bridges: [[36, 286, 70, 286, 14], [322, 386, 356, 386, 14], [36, 526, 70, 526, 14]],
+    chequers: [[76, 734, 52, 24, 0]]
   };
   var OPEN_WATER_DECOR = {
     medians: [],
     trees: [],
     umbrellas: [],
     buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]],
-    boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]]
+    boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]],
+    rocks: [[-16, 30, 84, 70, 4], [330, 34, 84, 68, 8], [-16, 700, 84, 74, 12], [330, 706, 84, 70, 1]],
+    buildings: [[176, 748, 88, 36, 0], [286, 752, 54, 28, 0]],
+    bridges: [[2, 236, 30, 236, 12], [360, 326, 388, 326, 12], [2, 606, 30, 606, 12]],
+    chequers: [[112, 744, 50, 24, 0]]
   };
   var TRACKS = [
     { id: "long-bay", name: "LONG BAY", build: buildLongBay, decor: LONG_BAY_DECOR },
@@ -4032,15 +4044,15 @@ var HarborLoop = (() => {
   var debugPointerCount = () => activePointers.size;
 
   // src/render/camera.ts
-  var PERSPECTIVE = false;
-  var PITCH = 0.86;
-  var HEIGHT = 620;
-  var NEAR = 250;
-  var FOCAL = 700;
+  var PERSPECTIVE = true;
+  var PITCH = 0.3;
+  var HEIGHT = 900;
+  var NEAR = 700;
+  var FOCAL = 1400;
   var SCREEN_CX = DESIGN_W / 2;
-  var SCREEN_CY = DESIGN_H * 0.56;
-  var FIT_X = 1.04;
-  var FIT_Y = 1.74;
+  var SCREEN_CY = DESIGN_H * -0.3;
+  var FIT_X = 0.94;
+  var FIT_Y = 1.02;
   var cosPitch = Math.cos(PITCH);
   var sinPitch = Math.sin(PITCH);
   var REFERENCE = (NEAR + DESIGN_H * 0.5) * cosPitch + HEIGHT * sinPitch;
@@ -4466,6 +4478,125 @@ var HarborLoop = (() => {
     }
     ctx.restore();
   }
+  function drawRocks(x, y, w, h, seed) {
+    const points = [];
+    const steps = 14;
+    for (let i = 0; i < steps; i++) {
+      const angle = i / steps * Math.PI * 2;
+      const wobble = 0.78 + 0.34 * Math.abs(Math.sin(seed * 2.7 + i * 1.9));
+      const px = x + w / 2 + Math.cos(angle) * (w / 2) * wobble;
+      const py = y + h / 2 + Math.sin(angle) * (h / 2) * wobble;
+      points.push(project(px, py));
+    }
+    const trace = () => {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.closePath();
+    };
+    ctx.save();
+    ctx.translate(SHADOW_X * 3, SHADOW_Y * 3);
+    trace();
+    ctx.fillStyle = "rgba(48,58,64,0.35)";
+    ctx.fill();
+    ctx.restore();
+    trace();
+    ctx.fillStyle = COLORS.rock;
+    ctx.fill();
+    ctx.save();
+    trace();
+    ctx.clip();
+    ctx.fillStyle = "rgba(214,214,204,0.30)";
+    const cap = project(x + w * 0.5 - SHADOW_X * 12, y + h * 0.5 - SHADOW_Y * 12);
+    ctx.beginPath();
+    ctx.ellipse(cap.x, cap.y, w * 0.42 * cap.scale, h * 0.4 * cap.scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawBuilding(x, y, w, h, angle) {
+    const corners = (dx, dy, inset) => {
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const hw = w / 2 - inset;
+      const hh = h / 2 - inset;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(
+        ([ox, oy]) => project(cx + ox * cos - oy * sin + dx, cy + ox * sin + oy * cos + dy)
+      );
+    };
+    const fillQuad = (pts, color) => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+    fillQuad(corners(SHADOW_X * 7, SHADOW_Y * 7, 0), "rgba(52,62,70,0.32)");
+    fillQuad(corners(SHADOW_X * 3.5, SHADOW_Y * 3.5, 0), "#8E938F");
+    fillQuad(corners(0, 0, 0), "#C9CCC5");
+    fillQuad(corners(0, 0, w * 0.16), "#AFB4AE");
+  }
+  function drawBridge(x1, y1, x2, y2, width) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = -dy / length * (width / 2);
+    const ny = dx / length * (width / 2);
+    const railA = [];
+    const railB = [];
+    const steps = 16;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      railA.push(project(x1 + dx * t + nx, y1 + dy * t + ny));
+      railB.push(project(x1 + dx * t - nx, y1 + dy * t - ny));
+    }
+    ctx.save();
+    ctx.translate(SHADOW_X * 5, SHADOW_Y * 5);
+    fillRibbon(railA, railB, "rgba(52,62,70,0.3)");
+    ctx.restore();
+    fillRibbon(railA, railB, "#E0BE63");
+    ctx.strokeStyle = "rgba(140,110,44,0.55)";
+    for (let i = 1; i < steps; i++) {
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(railA[i].x, railA[i].y);
+      ctx.lineTo(railB[i].x, railB[i].y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#C9A84D";
+    ctx.lineWidth = 2.4;
+    for (const rail of [railA, railB]) {
+      ctx.beginPath();
+      ctx.moveTo(rail[0].x, rail[0].y);
+      for (let i = 1; i < rail.length; i++) ctx.lineTo(rail[i].x, rail[i].y);
+      ctx.stroke();
+    }
+  }
+  function drawChequer(x, y, w, h, angle) {
+    const cols = 8;
+    const rows = 4;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const cellW = w / cols;
+    const cellH = h / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const ox = -w / 2 + c * cellW;
+        const oy = -h / 2 + r * cellH;
+        const pts = [[ox, oy], [ox + cellW, oy], [ox + cellW, oy + cellH], [ox, oy + cellH]].map(
+          ([px, py]) => project(x + w / 2 + px * cos - py * sin, y + h / 2 + px * sin + py * cos)
+        );
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.closePath();
+        ctx.fillStyle = (r + c) % 2 === 0 ? "#F2F0E8" : "#3B4249";
+        ctx.fill();
+      }
+    }
+  }
   function drawBackground() {
     const gradient = ctx.createLinearGradient(0, 0, 0, DESIGN_H);
     gradient.addColorStop(0, COLORS.waterDeep);
@@ -4508,6 +4639,10 @@ var HarborLoop = (() => {
       const p = project(x, y);
       drawUmbrella(p.x, p.y, size * p.scale);
     }
+    for (const [x, y, w, h, seed] of decor.rocks) drawRocks(x, y, w, h, seed);
+    for (const [x1, y1, x2, y2, width] of decor.bridges) drawBridge(x1, y1, x2, y2, width);
+    for (const [x, y, w, h, angle] of decor.chequers) drawChequer(x, y, w, h, angle);
+    for (const [x, y, w, h, angle] of decor.buildings) drawBuilding(x, y, w, h, angle);
     for (const [x, y, size, angle] of decor.boats) {
       const p = project(x, y);
       drawBoat(p.x, p.y, size * p.scale, angle);

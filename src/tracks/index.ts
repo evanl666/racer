@@ -175,6 +175,14 @@ export interface TrackDecor {
   buoys: Array<[number, number]>;
   /** [x, y, scale, angle] moored boats. */
   boats: Array<[number, number, number, number]>;
+  /** [x, y, width, height, seed] rocky shoreline. */
+  rocks: Array<[number, number, number, number, number]>;
+  /** [x, y, width, height, angle] harbour buildings. */
+  buildings: Array<[number, number, number, number, number]>;
+  /** [x1, y1, x2, y2, width] footbridges across the water. */
+  bridges: Array<[number, number, number, number, number]>;
+  /** [x, y, width, height, angle] chequered ground by the pits. */
+  chequers: Array<[number, number, number, number, number]>;
 }
 
 export interface TrackDefinition {
@@ -197,7 +205,11 @@ const LONG_BAY_DECOR: TrackDecor = {
   trees: [[194, 119, 0.4], [265, 209, 0.38], [205, 299, 0.4], [204, 479, 0.4], [265, 569, 0.38]],
   umbrellas: [[242, 119, 0.38], [252, 389, 0.38], [220, 659, 0.38]],
   buoys: [[26, 128], [365, 250], [25, 628], [366, 650]],
-  boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]]
+  boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]],
+  rocks: [[-14, 24, 96, 74, 3], [318, 18, 96, 66, 7], [-16, 690, 92, 80, 11], [322, 700, 92, 74, 5]],
+  buildings: [[196, 748, 92, 40, 0], [300, 752, 58, 32, 0], [96, 754, 54, 30, 0]],
+  bridges: [[358, 150, 388, 150, 13], [4, 320, 32, 320, 13], [358, 440, 388, 440, 13], [4, 570, 32, 570, 13]],
+  chequers: [[130, 742, 54, 26, 0]]
 };
 
 /** The oval's infield is one long clear strip, so it gets one long island. */
@@ -206,7 +218,11 @@ const GRAND_OVAL_DECOR: TrackDecor = {
   trees: [[195, 252, 0.42], [195, 400, 0.42], [195, 540, 0.42]],
   umbrellas: [[195, 326, 0.4], [195, 468, 0.4]],
   buoys: [[40, 150], [352, 210], [40, 640], [352, 620]],
-  boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]]
+  boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]],
+  rocks: [[-18, 40, 88, 88, 2], [326, 46, 88, 82, 9], [-18, 660, 88, 84, 6], [326, 668, 88, 80, 13]],
+  buildings: [[150, 736, 96, 38, 0], [260, 742, 60, 30, 0]],
+  bridges: [[36, 286, 70, 286, 14], [322, 386, 356, 386, 14], [36, 526, 70, 526, 14]],
+  chequers: [[76, 734, 52, 24, 0]]
 };
 
 /** Switchback and Marina Sprint fill the screen, so they only get open water. */
@@ -215,7 +231,11 @@ const OPEN_WATER_DECOR: TrackDecor = {
   trees: [],
   umbrellas: [],
   buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]],
-  boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]]
+  boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]],
+  rocks: [[-16, 30, 84, 70, 4], [330, 34, 84, 68, 8], [-16, 700, 84, 74, 12], [330, 706, 84, 70, 1]],
+  buildings: [[176, 748, 88, 36, 0], [286, 752, 54, 28, 0]],
+  bridges: [[2, 236, 30, 236, 12], [360, 326, 388, 326, 12], [2, 606, 30, 606, 12]],
+  chequers: [[112, 744, 50, 24, 0]]
 };
 
 export const TRACKS: TrackDefinition[] = [

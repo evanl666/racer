@@ -88,6 +88,152 @@ function drawUmbrella(x: number, y: number, size = 1): void {
   ctx.restore();
 }
 
+/**
+ * Rocky shoreline. Built from an irregular ring of points around an ellipse so
+ * no two outcrops repeat, with a lighter cap on the lit side.
+ */
+function drawRocks(x: number, y: number, w: number, h: number, seed: number): void {
+  const points: Array<{ x: number; y: number }> = [];
+  const steps = 14;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    // A cheap deterministic wobble: same rock every time, different per seed.
+    const wobble = 0.78 + 0.34 * Math.abs(Math.sin(seed * 2.7 + i * 1.9));
+    const px = x + w / 2 + Math.cos(angle) * (w / 2) * wobble;
+    const py = y + h / 2 + Math.sin(angle) * (h / 2) * wobble;
+    points.push(project(px, py));
+  }
+
+  const trace = (): void => {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.closePath();
+  };
+
+  ctx.save();
+  ctx.translate(SHADOW_X * 3, SHADOW_Y * 3);
+  trace();
+  ctx.fillStyle = 'rgba(48,58,64,0.35)';
+  ctx.fill();
+  ctx.restore();
+
+  trace();
+  ctx.fillStyle = COLORS.rock;
+  ctx.fill();
+
+  // Lit cap, offset against the light.
+  ctx.save();
+  trace();
+  ctx.clip();
+  ctx.fillStyle = 'rgba(214,214,204,0.30)';
+  const cap = project(x + w * 0.5 - SHADOW_X * 12, y + h * 0.5 - SHADOW_Y * 12);
+  ctx.beginPath();
+  ctx.ellipse(cap.x, cap.y, (w * 0.42) * cap.scale, (h * 0.4) * cap.scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** A harbour building: footprint, a raised roof and a lit face. */
+function drawBuilding(x: number, y: number, w: number, h: number, angle: number): void {
+  const corners = (dx: number, dy: number, inset: number): Array<{ x: number; y: number }> => {
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const hw = w / 2 - inset;
+    const hh = h / 2 - inset;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([ox, oy]) =>
+      project(cx + ox * cos - oy * sin + dx, cy + ox * sin + oy * cos + dy)
+    );
+  };
+
+  const fillQuad = (pts: Array<{ x: number; y: number }>, color: string): void => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  };
+
+  fillQuad(corners(SHADOW_X * 7, SHADOW_Y * 7, 0), 'rgba(52,62,70,0.32)');
+  fillQuad(corners(SHADOW_X * 3.5, SHADOW_Y * 3.5, 0), '#8E938F');
+  fillQuad(corners(0, 0, 0), '#C9CCC5');
+  fillQuad(corners(0, 0, w * 0.16), '#AFB4AE');
+}
+
+/** A footbridge: two rails and a run of slats between them. */
+function drawBridge(x1: number, y1: number, x2: number, y2: number, width: number): void {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / length) * (width / 2);
+  const ny = (dx / length) * (width / 2);
+
+  const railA: Array<{ x: number; y: number }> = [];
+  const railB: Array<{ x: number; y: number }> = [];
+  const steps = 16;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    railA.push(project(x1 + dx * t + nx, y1 + dy * t + ny));
+    railB.push(project(x1 + dx * t - nx, y1 + dy * t - ny));
+  }
+
+  // Shadow on the water, then the deck.
+  ctx.save();
+  ctx.translate(SHADOW_X * 5, SHADOW_Y * 5);
+  fillRibbon(railA, railB, 'rgba(52,62,70,0.3)');
+  ctx.restore();
+  fillRibbon(railA, railB, '#E0BE63');
+
+  // Slats.
+  ctx.strokeStyle = 'rgba(140,110,44,0.55)';
+  for (let i = 1; i < steps; i++) {
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(railA[i].x, railA[i].y);
+    ctx.lineTo(railB[i].x, railB[i].y);
+    ctx.stroke();
+  }
+
+  // Rails, drawn thicker than the slats so the edges read.
+  ctx.strokeStyle = '#C9A84D';
+  ctx.lineWidth = 2.4;
+  for (const rail of [railA, railB]) {
+    ctx.beginPath();
+    ctx.moveTo(rail[0].x, rail[0].y);
+    for (let i = 1; i < rail.length; i++) ctx.lineTo(rail[i].x, rail[i].y);
+    ctx.stroke();
+  }
+}
+
+/** Chequered ground by the pits. */
+function drawChequer(x: number, y: number, w: number, h: number, angle: number): void {
+  const cols = 8;
+  const rows = 4;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const cellW = w / cols;
+  const cellH = h / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const ox = -w / 2 + c * cellW;
+      const oy = -h / 2 + r * cellH;
+      const pts = [[ox, oy], [ox + cellW, oy], [ox + cellW, oy + cellH], [ox, oy + cellH]].map(([px, py]) =>
+        project(x + w / 2 + px * cos - py * sin, y + h / 2 + px * sin + py * cos)
+      );
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = (r + c) % 2 === 0 ? '#F2F0E8' : '#3B4249';
+      ctx.fill();
+    }
+  }
+}
+
 export function drawBackground(): void {
   const gradient = ctx.createLinearGradient(0, 0, 0, DESIGN_H);
   gradient.addColorStop(0, COLORS.waterDeep);
@@ -139,6 +285,10 @@ export function drawBackground(): void {
     const p = project(x, y);
     drawUmbrella(p.x, p.y, size * p.scale);
   }
+  for (const [x, y, w, h, seed] of decor.rocks) drawRocks(x, y, w, h, seed);
+  for (const [x1, y1, x2, y2, width] of decor.bridges) drawBridge(x1, y1, x2, y2, width);
+  for (const [x, y, w, h, angle] of decor.chequers) drawChequer(x, y, w, h, angle);
+  for (const [x, y, w, h, angle] of decor.buildings) drawBuilding(x, y, w, h, angle);
   for (const [x, y, size, angle] of decor.boats) {
     const p = project(x, y);
     drawBoat(p.x, p.y, size * p.scale, angle);

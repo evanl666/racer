@@ -44,3 +44,44 @@ export function roundRect(
 export function offsetPath(points: Vec2[], dx: number, dy: number): Vec2[] {
   return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
 }
+
+
+/**
+ * Fills the band between two paths. Once the plane is in perspective a stroke of
+ * constant width is wrong — the road has to narrow with distance — so surfaces
+ * are built from their two edges instead.
+ */
+export function fillRibbon(outer: Vec2[], inner: Vec2[], fill: string | CanvasPattern): void {
+  if (outer.length < 2 || inner.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(outer[0].x, outer[0].y);
+  for (let i = 1; i < outer.length; i++) ctx.lineTo(outer[i].x, outer[i].y);
+  for (let i = inner.length - 1; i >= 0; i--) ctx.lineTo(inner[i].x, inner[i].y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+/** Alternating blocks between two edges, for kerbs and dashed lane lines. */
+export function fillBands(
+  outer: Vec2[],
+  inner: Vec2[],
+  colors: string[],
+  blockLength: number,
+  skipEmpty = false
+): void {
+  const count = Math.min(outer.length, inner.length);
+  for (let i = 0; i < count; i++) {
+    const next = (i + 1) % count;
+    const band = Math.floor(i / blockLength) % colors.length;
+    if (skipEmpty && band % 2 === 1) continue;
+    ctx.beginPath();
+    ctx.moveTo(outer[i].x, outer[i].y);
+    ctx.lineTo(outer[next].x, outer[next].y);
+    ctx.lineTo(inner[next].x, inner[next].y);
+    ctx.lineTo(inner[i].x, inner[i].y);
+    ctx.closePath();
+    ctx.fillStyle = colors[band];
+    ctx.fill();
+  }
+}

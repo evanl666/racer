@@ -8,6 +8,7 @@ import type { AiCar, VehicleStyle } from '../types';
 import { CAR_BODY_DEPTH, CAR_SHADOW_DISTANCE, SHADOW_X, SHADOW_Y, localLight } from './light';
 import { roundRect } from './primitives';
 import { CAR_LENGTH, CAR_WIDTH, vehicleSprite } from './sprites';
+import { project, projectedHeading } from './camera';
 
 const PLAYER_STYLE: VehicleStyle = {
   body: COLORS.player,
@@ -39,13 +40,26 @@ function drawVehicle(
   spriteKey = '',
   swell = 1
 ): void {
-  const p = sampleAtDistance(distance, laneIndex);
+  const plane = sampleAtDistance(distance, laneIndex);
+  // Project onto the camera plane: position, screen heading and depth scale.
+  const projected = project(plane.x, plane.y);
+  const p = {
+    x: projected.x,
+    y: projected.y,
+    angle: projectedHeading(plane.x, plane.y, plane.angle)
+  };
+  const depthScale = projected.scale;
 
   const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
   if (sprite) {
-    drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell);
+    drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell * depthScale);
     return;
   }
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.scale(depthScale, depthScale);
+  ctx.rotate(p.angle);
+  ctx.translate(-p.x, -p.y);
 
   // Cast shadow first, offset in screen space so it stays put through a corner.
   // A hard offset silhouette beats a blur here: it is crisper and much cheaper.
@@ -121,6 +135,7 @@ function drawVehicle(
     ctx.fillRect(-5.5, indicatorY, 2.6, 1.4);
   }
   ctx.restore();
+  ctx.restore();
 }
 
 /** Sprite playback: one shadow blit, one body blit, plus any indicator. */
@@ -168,12 +183,13 @@ function drawAiCar(car: AiCar): void {
 
 /** A destroyed car briefly leaves a scorch mark so the kill reads on screen. */
 function drawWreck(car: AiCar): void {
-  const p = sampleAtDistance(car.distance, car.visualLane);
+  const plane = sampleAtDistance(car.distance, car.visualLane);
+  const p = project(plane.x, plane.y);
   const t = Math.max(0, Math.min(1, car.wreck));
   ctx.save();
   ctx.globalAlpha = t;
   ctx.translate(p.x, p.y);
-  const radius = 5 + (1 - t) * 12;
+  const radius = (5 + (1 - t) * 12) * p.scale;
   ctx.fillStyle = 'rgba(255,150,72,0.55)';
   ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(46,30,26,0.75)';
@@ -191,16 +207,18 @@ function drawZone(car: AiCar): void {
 
   ctx.save();
   for (let offset = 16; offset <= 62; offset += 8) {
-    const p = sampleAtDistance(car.distance - offset, car.visualLane);
+    const plane = sampleAtDistance(car.distance - offset, car.visualLane);
+    const p = project(plane.x, plane.y);
     ctx.globalAlpha = engaged ? 0.55 : 0.26;
     ctx.fillStyle = engaged ? COLORS.accentLight : COLORS.accent;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 1.8 * p.scale, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // Fill meter rides just above the marked car.
-  const head = sampleAtDistance(car.distance, car.visualLane);
+  const headPlane = sampleAtDistance(car.distance, car.visualLane);
+  const head = project(headPlane.x, headPlane.y);
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(8,17,25,0.7)';
   ctx.fillRect(head.x - 9, head.y - 11, 18, 3);
@@ -217,10 +235,12 @@ function playerAlpha(): number {
 /** The armed car gets a halo so the "contact is a kill now" state is unmissable. */
 function drawFireballAura(): void {
   if (player.fireball <= 0) return;
-  const p = sampleAtDistance(player.distance, player.visualLane);
+  const plane = sampleAtDistance(player.distance, player.visualLane);
+  const p = project(plane.x, plane.y);
   const pulse = 0.72 + Math.sin(player.travelled * 0.06) * 0.28;
   ctx.save();
   ctx.translate(p.x, p.y);
+  ctx.scale(p.scale, p.scale);
   ctx.globalAlpha = 0.5;
   ctx.fillStyle = 'rgba(255,164,72,0.75)';
   ctx.beginPath(); ctx.arc(0, 0, 11 + pulse * 3, 0, Math.PI * 2); ctx.fill();
@@ -264,7 +284,8 @@ function drawAfterimage(): void {
     const index = trail.length - 1 - i * stride;
     if (index < 0) break;
     const sample = trail[index];
-    points.push(sampleAtDistance(sample.distance, sample.lane));
+    const plane = sampleAtDistance(sample.distance, sample.lane);
+    points.push(project(plane.x, plane.y));
   }
   if (points.length < 2) return;
 
@@ -331,7 +352,15 @@ function drawAfterimage(): void {
 }
 
 export function drawCars(): void {
-  for (const car of aiCars) {
+  // Perspective means depth order matters: draw the far side of the board first.
+  const ordered = aiCars
+    .map((car) => {
+      const plane = sampleAtDistance(car.distance, car.visualLane);
+      return { car, depth: project(plane.x, plane.y).depth };
+    })
+    .sort((a, b) => b.depth - a.depth);
+
+  for (const { car } of ordered) {
     if (!car.alive) {
       if (car.wreck > 0) drawWreck(car);
       continue;

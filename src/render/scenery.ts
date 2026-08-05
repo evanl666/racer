@@ -4,8 +4,9 @@ import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import { COLORS } from '../theme';
 import { activeTrackId } from '../track';
 import { trackById } from '../tracks';
+import { project } from './camera';
 import { ISLAND_DEPTH, SHADOW_X, SHADOW_Y } from './light';
-import { roundRect } from './primitives';
+import { fillRibbon } from './primitives';
 
 function drawTree(x: number, y: number, size = 1): void {
   ctx.save();
@@ -64,33 +65,41 @@ export function drawBackground(): void {
   // islands never end up drawn across the road.
   const decor = trackById(activeTrackId).decor;
 
+  // Islands are projected quads: their far edge is narrower than their near one,
+  // which is most of what sells the plane as a plane.
+  const quad = (x: number, y: number, w: number, h: number, dx = 0, dy = 0): void => {
+    const top = [project(x + dx, y + dy), project(x + w + dx, y + dy)];
+    const bottom = [project(x + dx, y + h + dy), project(x + w + dx, y + h + dy)];
+    fillRibbon(top, bottom, ctx.fillStyle as string);
+  };
+
   decor.medians.forEach(([x, y, w, h], i) => {
-    // Shadow, side wall, then the top: the same three passes the road uses.
     ctx.fillStyle = 'rgba(4,12,18,0.42)';
-    roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH, y - 4 + SHADOW_Y * ISLAND_DEPTH, w + 8, h + 8, 12);
-    ctx.fill();
-
+    quad(x - 4, y - 4, w + 8, h + 8, SHADOW_X * ISLAND_DEPTH, SHADOW_Y * ISLAND_DEPTH);
     ctx.fillStyle = '#5A7043';
-    roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH * 0.5, y - 4 + SHADOW_Y * ISLAND_DEPTH * 0.5, w + 8, h + 8, 12);
-    ctx.fill();
-
+    quad(x - 4, y - 4, w + 8, h + 8, SHADOW_X * ISLAND_DEPTH * 0.5, SHADOW_Y * ISLAND_DEPTH * 0.5);
     ctx.fillStyle = COLORS.landDark;
-    roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 12);
-    ctx.fill();
+    quad(x - 4, y - 4, w + 8, h + 8);
     ctx.fillStyle = i % 2 === 0 ? COLORS.land : COLORS.landLight;
-    roundRect(ctx, x, y, w, h, 9);
-    ctx.fill();
+    quad(x, y, w, h);
   });
 
-  for (const [x, y, size] of decor.trees) drawTree(x, y, size);
-  for (const [x, y, size] of decor.umbrellas) drawUmbrella(x, y, size);
+  for (const [x, y, size] of decor.trees) {
+    const p = project(x, y);
+    drawTree(p.x, p.y, size * p.scale);
+  }
+  for (const [x, y, size] of decor.umbrellas) {
+    const p = project(x, y);
+    drawUmbrella(p.x, p.y, size * p.scale);
+  }
 
   // A few distant buoys fill negative space without competing with cars.
   for (const [x, y] of decor.buoys) {
+    const p = project(x, y);
     ctx.fillStyle = 'rgba(240,231,204,0.75)';
-    ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.2 * p.scale, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(232,112,79,0.85)';
-    ctx.beginPath(); ctx.arc(x, y - 2.8, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y - 2.8 * p.scale, 1.2 * p.scale, 0, Math.PI * 2); ctx.fill();
   }
 
   drawVignette();

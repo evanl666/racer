@@ -14,6 +14,7 @@ import { LANE_COUNT } from '../config';
 import { ctx } from '../platform';
 import { currentCruiseSpeed, player } from '../state';
 import { sampleAtDistance } from '../track';
+import { project } from './camera';
 
 const TRAIL_SEGMENTS = 7;
 const TRAIL_STEP = 5.5;
@@ -36,15 +37,17 @@ export function drawSpeedLines(): void {
   // Trail directly behind the car: the strongest single cue that it is moving.
   for (let i = 0; i < TRAIL_SEGMENTS; i++) {
     const back = (i + 1) * TRAIL_STEP;
-    const point = sampleAtDistance(player.distance - back, player.visualLane);
+    const plane = sampleAtDistance(player.distance - back, player.visualLane);
+    const point = project(plane.x, plane.y);
     const fade = (1 - i / TRAIL_SEGMENTS) * power;
 
     ctx.globalAlpha = fade * 0.5;
     ctx.strokeStyle = i < 3 ? '#FFD9A8' : '#FFFFFF';
-    ctx.lineWidth = 3.4 * (1 - i / TRAIL_SEGMENTS) + 0.5;
+    ctx.lineWidth = (3.4 * (1 - i / TRAIL_SEGMENTS) + 0.5) * point.scale;
     ctx.beginPath();
     ctx.moveTo(point.x, point.y);
-    const tail = sampleAtDistance(player.distance - back - TRAIL_STEP * 0.85, player.visualLane);
+    const tailPlane = sampleAtDistance(player.distance - back - TRAIL_STEP * 0.85, player.visualLane);
+    const tail = project(tailPlane.x, tailPlane.y);
     ctx.lineTo(tail.x, tail.y);
     ctx.stroke();
   }
@@ -64,8 +67,10 @@ export function drawSpeedLines(): void {
       for (let i = 0; i < 3; i++) {
         // Phase the streaks off the car's own distance so they slide past it.
         const back = 14 + i * 26 + ((player.travelled * 1.6) % 26);
-        const head = sampleAtDistance(player.distance - back, lane);
-        const tail = sampleAtDistance(player.distance - back - 11, lane);
+        const headPlane = sampleAtDistance(player.distance - back, lane);
+        const tailPlane = sampleAtDistance(player.distance - back - 11, lane);
+        const head = project(headPlane.x, headPlane.y);
+        const tail = project(tailPlane.x, tailPlane.y);
         ctx.beginPath();
         ctx.moveTo(head.x, head.y);
         ctx.lineTo(tail.x, tail.y);

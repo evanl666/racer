@@ -1295,8 +1295,8 @@ var HarborLoop = (() => {
       let dim = 0;
       if (phase < DARK_SECONDS) {
         const t = phase / DARK_SECONDS;
-        const edge = Math.min(t, 1 - t) / (FADE / DARK_SECONDS);
-        dim = Math.min(1, Math.max(0, edge)) * 0.94;
+        const edge2 = Math.min(t, 1 - t) / (FADE / DARK_SECONDS);
+        dim = Math.min(1, Math.max(0, edge2)) * 0.94;
       }
       effects.dim = dim;
       run2.score = player.totalPasses;
@@ -3130,20 +3130,6 @@ var HarborLoop = (() => {
   }
 
   // src/render/primitives.ts
-  function strokeClosedPath(points, width, color, dash = []) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-    ctx.closePath();
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.setLineDash(dash);
-    ctx.stroke();
-    ctx.restore();
-  }
   function roundRect(context3, x, y, w, h, r) {
     const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
     context3.beginPath();
@@ -3156,6 +3142,32 @@ var HarborLoop = (() => {
   }
   function offsetPath(points, dx, dy) {
     return points.map((point) => ({ x: point.x + dx, y: point.y + dy }));
+  }
+  function fillRibbon(outer, inner, fill) {
+    if (outer.length < 2 || inner.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(outer[0].x, outer[0].y);
+    for (let i = 1; i < outer.length; i++) ctx.lineTo(outer[i].x, outer[i].y);
+    for (let i = inner.length - 1; i >= 0; i--) ctx.lineTo(inner[i].x, inner[i].y);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  function fillBands(outer, inner, colors, blockLength, skipEmpty = false) {
+    const count = Math.min(outer.length, inner.length);
+    for (let i = 0; i < count; i++) {
+      const next = (i + 1) % count;
+      const band = Math.floor(i / blockLength) % colors.length;
+      if (skipEmpty && band % 2 === 1) continue;
+      ctx.beginPath();
+      ctx.moveTo(outer[i].x, outer[i].y);
+      ctx.lineTo(outer[next].x, outer[next].y);
+      ctx.lineTo(inner[next].x, inner[next].y);
+      ctx.lineTo(inner[i].x, inner[i].y);
+      ctx.closePath();
+      ctx.fillStyle = colors[band];
+      ctx.fill();
+    }
   }
 
   // src/render/hud.ts
@@ -4017,12 +4029,52 @@ var HarborLoop = (() => {
   }
   var debugPointerCount = () => activePointers.size;
 
+  // src/render/camera.ts
+  var PITCH = 0.86;
+  var HEIGHT = 620;
+  var NEAR = 250;
+  var FOCAL = 700;
+  var SCREEN_CX = DESIGN_W / 2;
+  var SCREEN_CY = DESIGN_H * 0.56;
+  var FIT_X = 1.04;
+  var FIT_Y = 1.74;
+  var cosPitch = Math.cos(PITCH);
+  var sinPitch = Math.sin(PITCH);
+  var REFERENCE = (NEAR + DESIGN_H * 0.5) * cosPitch + HEIGHT * sinPitch;
+  function project(x, y) {
+    const ground = NEAR + (DESIGN_H - y);
+    const lateral = x - SCREEN_CX;
+    const depth = ground * cosPitch + HEIGHT * sinPitch;
+    const vertical = ground * sinPitch - HEIGHT * cosPitch;
+    const scale2 = FOCAL / Math.max(1, depth);
+    return {
+      x: SCREEN_CX + lateral * scale2 * FIT_X,
+      y: SCREEN_CY - vertical * scale2 * FIT_Y,
+      // Sprites use one scale; the geometric mean keeps them from looking squashed.
+      scale: REFERENCE / Math.max(1, depth) * Math.sqrt(FIT_X * FIT_Y),
+      depth
+    };
+  }
+  function projectPath(points) {
+    return points.map((point) => project(point.x, point.y));
+  }
+  function projectedHeading(x, y, angle) {
+    const step = 2;
+    const a = project(x, y);
+    const b = project(x + Math.cos(angle) * step, y + Math.sin(angle) * step);
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  }
+
   // src/render/overlays.ts
   function drawHazardLane() {
     if (effects.hazardLane < 0) return;
-    const path = pathForLane(effects.hazardLane);
-    strokeClosedPath(path, 7.4, "rgba(255,96,84,0.42)");
-    strokeClosedPath(path, 2.6, "rgba(255,196,120,0.85)", [7, 6]);
+    const outer = projectPath(pathForLane(effects.hazardLane + 0.42));
+    const inner = projectPath(pathForLane(effects.hazardLane - 0.42));
+    fillRibbon(outer, inner, "rgba(255,96,84,0.42)");
+    const coreOuter = projectPath(pathForLane(effects.hazardLane + 0.14));
+    const coreInner = projectPath(pathForLane(effects.hazardLane - 0.14));
+    fillRibbon(coreOuter, coreInner, "rgba(255,196,120,0.85)");
+    void project;
   }
   function drawBlackout() {
     if (effects.dim <= 0) return;
@@ -4056,14 +4108,16 @@ var HarborLoop = (() => {
     ctx.lineCap = "round";
     for (let i = 0; i < TRAIL_SEGMENTS; i++) {
       const back = (i + 1) * TRAIL_STEP;
-      const point = sampleAtDistance(player.distance - back, player.visualLane);
+      const plane = sampleAtDistance(player.distance - back, player.visualLane);
+      const point = project(plane.x, plane.y);
       const fade = (1 - i / TRAIL_SEGMENTS) * power;
       ctx.globalAlpha = fade * 0.5;
       ctx.strokeStyle = i < 3 ? "#FFD9A8" : "#FFFFFF";
-      ctx.lineWidth = 3.4 * (1 - i / TRAIL_SEGMENTS) + 0.5;
+      ctx.lineWidth = (3.4 * (1 - i / TRAIL_SEGMENTS) + 0.5) * point.scale;
       ctx.beginPath();
       ctx.moveTo(point.x, point.y);
-      const tail = sampleAtDistance(player.distance - back - TRAIL_STEP * 0.85, player.visualLane);
+      const tailPlane = sampleAtDistance(player.distance - back - TRAIL_STEP * 0.85, player.visualLane);
+      const tail = project(tailPlane.x, tailPlane.y);
       ctx.lineTo(tail.x, tail.y);
       ctx.stroke();
     }
@@ -4077,8 +4131,10 @@ var HarborLoop = (() => {
         if (lane < -0.4 || lane > LANE_COUNT - 0.6) continue;
         for (let i = 0; i < 3; i++) {
           const back = 14 + i * 26 + player.travelled * 1.6 % 26;
-          const head = sampleAtDistance(player.distance - back, lane);
-          const tail = sampleAtDistance(player.distance - back - 11, lane);
+          const headPlane = sampleAtDistance(player.distance - back, lane);
+          const tailPlane = sampleAtDistance(player.distance - back - 11, lane);
+          const head = project(headPlane.x, headPlane.y);
+          const tail = project(tailPlane.x, tailPlane.y);
           ctx.beginPath();
           ctx.moveTo(head.x, head.y);
           ctx.lineTo(tail.x, tail.y);
@@ -4271,52 +4327,57 @@ var HarborLoop = (() => {
   }
 
   // src/render/road.ts
-  function drawCurbs(path, phase = 0) {
-    ctx.save();
-    ctx.lineCap = "butt";
-    ctx.lineWidth = 4.6;
-    for (let i = 0; i < path.length; i++) {
-      const a = path[i];
-      const b = path[(i + 1) % path.length];
-      const band = Math.floor((arc.cumulative[i] + phase) / 16);
-      ctx.strokeStyle = band % 2 === 0 ? COLORS.curbLight : COLORS.curbRed;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-    ctx.restore();
+  function edge(offset) {
+    return projectPath(pathAtOffset(offset));
   }
   function drawTrack() {
-    const shadowPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH, SHADOW_Y * ROAD_DEPTH);
-    strokeClosedPath(shadowPath, ROAD_HALF_WIDTH * 2 + 13, "rgba(4,12,18,0.5)");
-    const wallPath = offsetPath(centerPath, SHADOW_X * ROAD_DEPTH * 0.45, SHADOW_Y * ROAD_DEPTH * 0.45);
-    strokeClosedPath(wallPath, ROAD_HALF_WIDTH * 2 + 9, "#121A20");
-    strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 12, COLORS.roadShadow);
-    strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 7, COLORS.roadEdge);
-    strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 + 2, COLORS.curbLight);
-    strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, COLORS.road);
-    strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 9, COLORS.roadHighlight);
+    const outerShadow = projectPath(
+      offsetPath(pathAtOffset(ROAD_HALF_WIDTH + 7), SHADOW_X * ROAD_DEPTH, SHADOW_Y * ROAD_DEPTH)
+    );
+    const innerShadow = projectPath(
+      offsetPath(pathAtOffset(-ROAD_HALF_WIDTH - 7), SHADOW_X * ROAD_DEPTH, SHADOW_Y * ROAD_DEPTH)
+    );
+    fillRibbon(outerShadow, innerShadow, "rgba(4,12,18,0.55)");
+    const outerWall = projectPath(
+      offsetPath(pathAtOffset(ROAD_HALF_WIDTH + 5), SHADOW_X * ROAD_DEPTH * 0.5, SHADOW_Y * ROAD_DEPTH * 0.5)
+    );
+    const innerWall = projectPath(
+      offsetPath(pathAtOffset(-ROAD_HALF_WIDTH - 5), SHADOW_X * ROAD_DEPTH * 0.5, SHADOW_Y * ROAD_DEPTH * 0.5)
+    );
+    fillRibbon(outerWall, innerWall, "#121A20");
+    const outerEdge = edge(ROAD_HALF_WIDTH + 4);
+    const innerEdge = edge(-ROAD_HALF_WIDTH - 4);
+    fillRibbon(outerEdge, innerEdge, COLORS.roadEdge);
+    const outerKerb = edge(ROAD_HALF_WIDTH);
+    const outerRoad = edge(ROAD_HALF_WIDTH - 3.2);
+    const innerRoad = edge(-ROAD_HALF_WIDTH + 3.2);
+    const innerKerb = edge(-ROAD_HALF_WIDTH);
+    fillBands(outerKerb, outerRoad, [COLORS.curbLight, COLORS.curbRed], 6);
+    fillBands(innerRoad, innerKerb, [COLORS.curbRed, COLORS.curbLight], 6);
+    fillRibbon(outerRoad, innerRoad, COLORS.road);
     const grain = asphaltTexture(ctx);
-    if (grain) strokeClosedPath(centerPath, ROAD_HALF_WIDTH * 2 - 2, grain);
-    const litRim = offsetPath(centerPath, -SHADOW_X * 1.6, -SHADOW_Y * 1.6);
-    strokeClosedPath(litRim, ROAD_HALF_WIDTH * 2 + 3.4, "rgba(255,246,228,0.10)");
-    const occluded = offsetPath(centerPath, SHADOW_X * 1.4, SHADOW_Y * 1.4);
-    strokeClosedPath(occluded, ROAD_HALF_WIDTH * 2 - 1, "rgba(6,14,20,0.16)");
-    drawCurbs(outerRoadEdgePath, 0);
-    drawCurbs(innerRoadEdgePath, 8);
-    for (const dividerPath of laneDividerPaths) {
-      strokeClosedPath(dividerPath, 1.15, COLORS.lane, [6, 5]);
+    if (grain) fillRibbon(outerRoad, innerRoad, grain);
+    for (let i = 1; i < LANE_COUNT; i++) {
+      const line = pathForLane(i - 0.5);
+      const a = projectPath(offsetPath(line, -0.55, 0));
+      const b = projectPath(offsetPath(line, 0.55, 0));
+      fillBands(a, b, [COLORS.lane, "rgba(0,0,0,0)"], 4, true);
     }
-    const sf = sampleAtDistance(0, (LANE_COUNT - 1) / 2);
+    drawStartLine();
+  }
+  function drawStartLine() {
+    const centre = sampleAtDistance(0, (LANE_COUNT - 1) / 2);
+    const heading = projectedHeading(centre.x, centre.y, centre.angle);
+    const origin = project(centre.x, centre.y);
     ctx.save();
-    ctx.translate(sf.x, sf.y);
-    ctx.rotate(sf.angle);
+    ctx.translate(origin.x, origin.y);
+    ctx.rotate(heading);
+    const size = 4.6 * origin.scale;
     for (let i = -3; i <= 2; i++) {
       ctx.fillStyle = i % 2 === 0 ? "#F5F0E2" : "#242A2E";
-      ctx.fillRect(-2.2, i * 9, 4.4, 9);
+      ctx.fillRect(-size * 0.5, i * size, size, size);
       ctx.fillStyle = i % 2 === 0 ? "#242A2E" : "#F5F0E2";
-      ctx.fillRect(2.2, i * 9, 4.4, 9);
+      ctx.fillRect(size * 0.5, i * size, size, size);
     }
     ctx.restore();
   }
@@ -4386,30 +4447,38 @@ var HarborLoop = (() => {
       ctx.stroke();
     }
     const decor = trackById(activeTrackId).decor;
+    const quad = (x, y, w, h, dx = 0, dy = 0) => {
+      const top = [project(x + dx, y + dy), project(x + w + dx, y + dy)];
+      const bottom = [project(x + dx, y + h + dy), project(x + w + dx, y + h + dy)];
+      fillRibbon(top, bottom, ctx.fillStyle);
+    };
     decor.medians.forEach(([x, y, w, h], i) => {
       ctx.fillStyle = "rgba(4,12,18,0.42)";
-      roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH, y - 4 + SHADOW_Y * ISLAND_DEPTH, w + 8, h + 8, 12);
-      ctx.fill();
+      quad(x - 4, y - 4, w + 8, h + 8, SHADOW_X * ISLAND_DEPTH, SHADOW_Y * ISLAND_DEPTH);
       ctx.fillStyle = "#5A7043";
-      roundRect(ctx, x - 4 + SHADOW_X * ISLAND_DEPTH * 0.5, y - 4 + SHADOW_Y * ISLAND_DEPTH * 0.5, w + 8, h + 8, 12);
-      ctx.fill();
+      quad(x - 4, y - 4, w + 8, h + 8, SHADOW_X * ISLAND_DEPTH * 0.5, SHADOW_Y * ISLAND_DEPTH * 0.5);
       ctx.fillStyle = COLORS.landDark;
-      roundRect(ctx, x - 4, y - 4, w + 8, h + 8, 12);
-      ctx.fill();
+      quad(x - 4, y - 4, w + 8, h + 8);
       ctx.fillStyle = i % 2 === 0 ? COLORS.land : COLORS.landLight;
-      roundRect(ctx, x, y, w, h, 9);
-      ctx.fill();
+      quad(x, y, w, h);
     });
-    for (const [x, y, size] of decor.trees) drawTree(x, y, size);
-    for (const [x, y, size] of decor.umbrellas) drawUmbrella(x, y, size);
+    for (const [x, y, size] of decor.trees) {
+      const p = project(x, y);
+      drawTree(p.x, p.y, size * p.scale);
+    }
+    for (const [x, y, size] of decor.umbrellas) {
+      const p = project(x, y);
+      drawUmbrella(p.x, p.y, size * p.scale);
+    }
     for (const [x, y] of decor.buoys) {
+      const p = project(x, y);
       ctx.fillStyle = "rgba(240,231,204,0.75)";
       ctx.beginPath();
-      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 2.2 * p.scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "rgba(232,112,79,0.85)";
       ctx.beginPath();
-      ctx.arc(x, y - 2.8, 1.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y - 2.8 * p.scale, 1.2 * p.scale, 0, Math.PI * 2);
       ctx.fill();
     }
     drawVignette();
@@ -4498,12 +4567,24 @@ var HarborLoop = (() => {
     rim: "#5D6B72"
   };
   function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false, spriteKey = "", swell = 1) {
-    const p = sampleAtDistance(distance, laneIndex);
+    const plane = sampleAtDistance(distance, laneIndex);
+    const projected = project(plane.x, plane.y);
+    const p = {
+      x: projected.x,
+      y: projected.y,
+      angle: projectedHeading(plane.x, plane.y, plane.angle)
+    };
+    const depthScale = projected.scale;
     const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
     if (sprite) {
-      drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell);
+      drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell * depthScale);
       return;
     }
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(depthScale, depthScale);
+    ctx.rotate(p.angle);
+    ctx.translate(-p.x, -p.y);
     ctx.save();
     ctx.globalAlpha = alpha * 0.32;
     ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
@@ -4561,6 +4642,7 @@ var HarborLoop = (() => {
       ctx.fillRect(-5.5, indicatorY, 2.6, 1.4);
     }
     ctx.restore();
+    ctx.restore();
   }
   function drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell = 1) {
     const length = CAR_LENGTH * swell;
@@ -4592,12 +4674,13 @@ var HarborLoop = (() => {
     drawVehicle(car.distance, car.visualLane, AI_STYLE, 1, car.direction, indicatorOn, "ai");
   }
   function drawWreck(car) {
-    const p = sampleAtDistance(car.distance, car.visualLane);
+    const plane = sampleAtDistance(car.distance, car.visualLane);
+    const p = project(plane.x, plane.y);
     const t = Math.max(0, Math.min(1, car.wreck));
     ctx.save();
     ctx.globalAlpha = t;
     ctx.translate(p.x, p.y);
-    const radius = 5 + (1 - t) * 12;
+    const radius = (5 + (1 - t) * 12) * p.scale;
     ctx.fillStyle = "rgba(255,150,72,0.55)";
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
@@ -4613,14 +4696,16 @@ var HarborLoop = (() => {
     const engaged = gap > 13 && gap < 66 && Math.abs(player.visualLane - car.visualLane) < 0.7;
     ctx.save();
     for (let offset = 16; offset <= 62; offset += 8) {
-      const p = sampleAtDistance(car.distance - offset, car.visualLane);
+      const plane = sampleAtDistance(car.distance - offset, car.visualLane);
+      const p = project(plane.x, plane.y);
       ctx.globalAlpha = engaged ? 0.55 : 0.26;
       ctx.fillStyle = engaged ? COLORS.accentLight : COLORS.accent;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 1.8 * p.scale, 0, Math.PI * 2);
       ctx.fill();
     }
-    const head = sampleAtDistance(car.distance, car.visualLane);
+    const headPlane = sampleAtDistance(car.distance, car.visualLane);
+    const head = project(headPlane.x, headPlane.y);
     ctx.globalAlpha = 1;
     ctx.fillStyle = "rgba(8,17,25,0.7)";
     ctx.fillRect(head.x - 9, head.y - 11, 18, 3);
@@ -4634,10 +4719,12 @@ var HarborLoop = (() => {
   }
   function drawFireballAura() {
     if (player.fireball <= 0) return;
-    const p = sampleAtDistance(player.distance, player.visualLane);
+    const plane = sampleAtDistance(player.distance, player.visualLane);
+    const p = project(plane.x, plane.y);
     const pulse = 0.72 + Math.sin(player.travelled * 0.06) * 0.28;
     ctx.save();
     ctx.translate(p.x, p.y);
+    ctx.scale(p.scale, p.scale);
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = "rgba(255,164,72,0.75)";
     ctx.beginPath();
@@ -4667,7 +4754,8 @@ var HarborLoop = (() => {
       const index = trail.length - 1 - i * stride;
       if (index < 0) break;
       const sample = trail[index];
-      points.push(sampleAtDistance(sample.distance, sample.lane));
+      const plane = sampleAtDistance(sample.distance, sample.lane);
+      points.push(project(plane.x, plane.y));
     }
     if (points.length < 2) return;
     ctx.save();
@@ -4724,7 +4812,11 @@ var HarborLoop = (() => {
     }
   }
   function drawCars() {
-    for (const car of aiCars) {
+    const ordered = aiCars.map((car) => {
+      const plane = sampleAtDistance(car.distance, car.visualLane);
+      return { car, depth: project(plane.x, plane.y).depth };
+    }).sort((a, b) => b.depth - a.depth);
+    for (const { car } of ordered) {
       if (!car.alive) {
         if (car.wreck > 0) drawWreck(car);
         continue;

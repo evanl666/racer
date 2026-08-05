@@ -4,13 +4,19 @@ import { effects } from '../effects';
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import { COLORS } from '../theme';
 import { pathForLane } from '../track';
-import { strokeClosedPath } from './primitives';
+import { project, projectPath } from './camera';
+import { fillRibbon } from './primitives';
 
 export function drawHazardLane(): void {
   if (effects.hazardLane < 0) return;
-  const path = pathForLane(effects.hazardLane);
-  strokeClosedPath(path, 7.4, 'rgba(255,96,84,0.42)');
-  strokeClosedPath(path, 2.6, 'rgba(255,196,120,0.85)', [7, 6]);
+  const outer = projectPath(pathForLane(effects.hazardLane + 0.42));
+  const inner = projectPath(pathForLane(effects.hazardLane - 0.42));
+  fillRibbon(outer, inner, 'rgba(255,96,84,0.42)');
+
+  const coreOuter = projectPath(pathForLane(effects.hazardLane + 0.14));
+  const coreInner = projectPath(pathForLane(effects.hazardLane - 0.14));
+  fillRibbon(coreOuter, coreInner, 'rgba(255,196,120,0.85)');
+  void project;
 }
 
 export function drawBlackout(): void {

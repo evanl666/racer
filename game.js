@@ -319,19 +319,22 @@ var HarborLoop = (() => {
     ],
     trees: [[194, 119, 0.4], [265, 209, 0.38], [205, 299, 0.4], [204, 479, 0.4], [265, 569, 0.38]],
     umbrellas: [[242, 119, 0.38], [252, 389, 0.38], [220, 659, 0.38]],
-    buoys: [[26, 128], [365, 250], [25, 628], [366, 650]]
+    buoys: [[26, 128], [365, 250], [25, 628], [366, 650]],
+    boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]]
   };
   var GRAND_OVAL_DECOR = {
     medians: [[170, 216, 50, 356]],
     trees: [[195, 252, 0.42], [195, 400, 0.42], [195, 540, 0.42]],
     umbrellas: [[195, 326, 0.4], [195, 468, 0.4]],
-    buoys: [[40, 150], [352, 210], [40, 640], [352, 620]]
+    buoys: [[40, 150], [352, 210], [40, 640], [352, 620]],
+    boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]]
   };
   var OPEN_WATER_DECOR = {
     medians: [],
     trees: [],
     umbrellas: [],
-    buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]]
+    buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]],
+    boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]]
   };
   var TRACKS = [
     { id: "long-bay", name: "LONG BAY", build: buildLongBay, decor: LONG_BAY_DECOR },
@@ -2252,32 +2255,34 @@ var HarborLoop = (() => {
 
   // src/theme.ts
   var COLORS = {
-    water: "#163D52",
-    waterDeep: "#102F42",
-    waterLine: "rgba(255,255,255,0.045)",
-    land: "#A8BE79",
-    landLight: "#C0CF91",
-    landDark: "#7F995F",
-    roadShadow: "rgba(5,14,20,0.48)",
-    roadEdge: "#20282D",
-    curbLight: "#F1E9D7",
-    curbRed: "#D86A59",
-    road: "#58636A",
+    water: "#9DB5C0",
+    waterDeep: "#8FA9B6",
+    waterLine: "rgba(255,255,255,0.14)",
+    land: "#C6CE7E",
+    landLight: "#D4DA92",
+    landDark: "#A8B265",
+    rock: "#7C7C74",
+    roadShadow: "rgba(70,78,84,0.30)",
+    roadEdge: "#B9B9B1",
+    /** Tan lines run along both sides of the road, as on the original circuit. */
+    curbLight: "#E3C25E",
+    curbRed: "#D8B44E",
+    road: "#D9D9D2",
     /** Every other lane, so the channels read without dashed dividers. */
-    roadAlt: "#6E7B83",
-    roadHighlight: "rgba(255,255,255,0.045)",
-    lane: "rgba(246,242,226,0.55)",
-    player: "#F05A47",
-    playerLight: "#FF8D73",
+    roadAlt: "#C4C4BC",
+    roadHighlight: "rgba(255,255,255,0.18)",
+    lane: "rgba(255,255,255,0.7)",
+    player: "#E8452F",
+    playerLight: "#FF7A5E",
     playerStripe: "#FFF4D8",
-    window: "#C8EDF1",
-    ai: "#161B1E",
-    aiLight: "#31383C",
-    aiWindow: "#69777D",
+    window: "#BFEAF2",
+    ai: "#2C6EA8",
+    aiLight: "#4FA8DC",
+    aiWindow: "#BEE9F7",
     text: "#F7F4EA",
     muted: "rgba(247,244,234,0.66)",
-    accent: "#57D5CB",
-    accentLight: "#C5FFF7",
+    accent: "#2BB6C4",
+    accentLight: "#8FF0FA",
     button: "rgba(8,17,25,0.82)",
     buttonActive: "rgba(87,213,203,0.30)",
     buttonDisabled: "rgba(8,17,25,0.42)",
@@ -3165,22 +3170,6 @@ var HarborLoop = (() => {
     ctx.closePath();
     ctx.fillStyle = fill;
     ctx.fill();
-  }
-  function fillBands(outer, inner, colors, blockLength, skipEmpty = false) {
-    const count = Math.min(outer.length, inner.length);
-    for (let i = 0; i < count; i++) {
-      const next = (i + 1) % count;
-      const band = Math.floor(i / blockLength) % colors.length;
-      if (skipEmpty && band % 2 === 1) continue;
-      ctx.beginPath();
-      ctx.moveTo(outer[i].x, outer[i].y);
-      ctx.lineTo(outer[next].x, outer[next].y);
-      ctx.lineTo(inner[next].x, inner[next].y);
-      ctx.lineTo(inner[i].x, inner[i].y);
-      ctx.closePath();
-      ctx.fillStyle = colors[band];
-      ctx.fill();
-    }
   }
 
   // src/render/hud.ts
@@ -4369,8 +4358,8 @@ var HarborLoop = (() => {
     const outerRoad = edge(ROAD_HALF_WIDTH - 3.2);
     const innerRoad = edge(-ROAD_HALF_WIDTH + 3.2);
     const innerKerb = edge(-ROAD_HALF_WIDTH);
-    fillBands(outerKerb, outerRoad, [COLORS.curbLight, COLORS.curbRed], 6);
-    fillBands(innerRoad, innerKerb, [COLORS.curbRed, COLORS.curbLight], 6);
+    fillRibbon(outerKerb, outerRoad, COLORS.curbLight);
+    fillRibbon(innerRoad, innerKerb, COLORS.curbLight);
     for (let lane = 0; lane < LANE_COUNT; lane++) {
       const laneOuter = projectPath(pathForLane(lane - 0.5));
       const laneInner = projectPath(pathForLane(lane + 0.5));
@@ -4419,6 +4408,40 @@ var HarborLoop = (() => {
     ctx.fill();
     ctx.restore();
   }
+  function drawBoat(x, y, size, angle) {
+    const length = 26 * size;
+    const beam = 8.5 * size;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.fillStyle = "rgba(60,80,92,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(1.5 * size, 1.8 * size, length * 0.5, beam * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#F4F3EE";
+    ctx.beginPath();
+    ctx.moveTo(length * 0.5, 0);
+    ctx.quadraticCurveTo(length * 0.12, -beam * 0.5, -length * 0.42, -beam * 0.42);
+    ctx.lineTo(-length * 0.5, -beam * 0.3);
+    ctx.lineTo(-length * 0.5, beam * 0.3);
+    ctx.lineTo(-length * 0.42, beam * 0.42);
+    ctx.quadraticCurveTo(length * 0.12, beam * 0.5, length * 0.5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#D8DCDA";
+    ctx.beginPath();
+    ctx.moveTo(length * 0.32, 0);
+    ctx.quadraticCurveTo(length * 0.05, -beam * 0.3, -length * 0.34, -beam * 0.26);
+    ctx.lineTo(-length * 0.34, beam * 0.26);
+    ctx.quadraticCurveTo(length * 0.05, beam * 0.3, length * 0.32, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#9FB0B8";
+    ctx.fillRect(-length * 0.2, -beam * 0.2, length * 0.26, beam * 0.4);
+    ctx.fillStyle = "#5E7480";
+    ctx.fillRect(-length * 0.14, -beam * 0.12, length * 0.14, beam * 0.24);
+    ctx.restore();
+  }
   function drawUmbrella(x, y, size = 1) {
     ctx.save();
     ctx.translate(x, y);
@@ -4447,7 +4470,7 @@ var HarborLoop = (() => {
     const gradient = ctx.createLinearGradient(0, 0, 0, DESIGN_H);
     gradient.addColorStop(0, COLORS.waterDeep);
     gradient.addColorStop(0.55, COLORS.water);
-    gradient.addColorStop(1, "#12364A");
+    gradient.addColorStop(1, "#94AEBA");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
     ctx.strokeStyle = COLORS.waterLine;
@@ -4485,6 +4508,10 @@ var HarborLoop = (() => {
       const p = project(x, y);
       drawUmbrella(p.x, p.y, size * p.scale);
     }
+    for (const [x, y, size, angle] of decor.boats) {
+      const p = project(x, y);
+      drawBoat(p.x, p.y, size * p.scale, angle);
+    }
     for (const [x, y] of decor.buoys) {
       const p = project(x, y);
       ctx.fillStyle = "rgba(240,231,204,0.75)";
@@ -4507,9 +4534,9 @@ var HarborLoop = (() => {
       DESIGN_H * 0.5,
       DESIGN_H * 0.72
     );
-    gradient.addColorStop(0, "rgba(255,250,235,0.05)");
+    gradient.addColorStop(0, "rgba(255,255,245,0.10)");
     gradient.addColorStop(0.55, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, "rgba(2,8,13,0.5)");
+    gradient.addColorStop(1, "rgba(40,60,72,0.32)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
   }
@@ -4569,17 +4596,17 @@ var HarborLoop = (() => {
     window: COLORS.window,
     lights: "#FFE6A4",
     stripe: COLORS.playerStripe,
-    side: "#9E2C22",
+    side: "#96271B",
     rim: "#FFC9B2"
   };
   var AI_STYLE = {
     body: COLORS.ai,
     cabin: COLORS.aiLight,
     window: COLORS.aiWindow,
-    lights: "#C5D3D8",
+    lights: "#DCF4FF",
     stripe: null,
-    side: "#080B0D",
-    rim: "#5D6B72"
+    side: "#1B4769",
+    rim: "#7FD4F5"
   };
   function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false, spriteKey = "", swell = 1) {
     const plane = sampleAtDistance(distance, laneIndex);

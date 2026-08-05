@@ -173,6 +173,8 @@ export interface TrackDecor {
   umbrellas: Array<[number, number, number]>;
   /** [x, y] buoys out on the water. */
   buoys: Array<[number, number]>;
+  /** [x, y, scale, angle] moored boats. */
+  boats: Array<[number, number, number, number]>;
 }
 
 export interface TrackDefinition {
@@ -194,7 +196,8 @@ const LONG_BAY_DECOR: TrackDecor = {
   ],
   trees: [[194, 119, 0.4], [265, 209, 0.38], [205, 299, 0.4], [204, 479, 0.4], [265, 569, 0.38]],
   umbrellas: [[242, 119, 0.38], [252, 389, 0.38], [220, 659, 0.38]],
-  buoys: [[26, 128], [365, 250], [25, 628], [366, 650]]
+  buoys: [[26, 128], [365, 250], [25, 628], [366, 650]],
+  boats: [[371, 165, 0.62, 1.57], [12, 335, 0.6, 1.57], [372, 455, 0.58, 1.57], [12, 585, 0.62, 1.57]]
 };
 
 /** The oval's infield is one long clear strip, so it gets one long island. */
@@ -202,7 +205,8 @@ const GRAND_OVAL_DECOR: TrackDecor = {
   medians: [[170, 216, 50, 356]],
   trees: [[195, 252, 0.42], [195, 400, 0.42], [195, 540, 0.42]],
   umbrellas: [[195, 326, 0.4], [195, 468, 0.4]],
-  buoys: [[40, 150], [352, 210], [40, 640], [352, 620]]
+  buoys: [[40, 150], [352, 210], [40, 640], [352, 620]],
+  boats: [[52, 300, 0.78, 1.57], [338, 400, 0.78, 1.57], [52, 540, 0.72, 1.57]]
 };
 
 /** Switchback and Marina Sprint fill the screen, so they only get open water. */
@@ -210,7 +214,8 @@ const OPEN_WATER_DECOR: TrackDecor = {
   medians: [],
   trees: [],
   umbrellas: [],
-  buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]]
+  buoys: [[20, 120], [372, 200], [20, 560], [372, 660], [18, 380]],
+  boats: [[12, 250, 0.6, 1.57], [376, 340, 0.6, 1.57], [12, 620, 0.58, 1.57]]
 };
 
 export const TRACKS: TrackDefinition[] = [

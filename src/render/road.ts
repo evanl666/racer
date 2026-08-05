@@ -15,7 +15,7 @@ import { ctx } from '../platform';
 import { COLORS } from '../theme';
 import { pathAtOffset, pathForLane, sampleAtDistance } from '../track';
 import { ROAD_DEPTH, SHADOW_X, SHADOW_Y } from './light';
-import { fillBands, fillRibbon, offsetPath } from './primitives';
+import { fillRibbon, offsetPath } from './primitives';
 import { project, projectPath, projectedHeading } from './camera';
 import { asphaltTexture } from './sprites';
 
@@ -51,9 +51,10 @@ export function drawTrack(): void {
   const innerRoad = edge(-ROAD_HALF_WIDTH + 3.2);
   const innerKerb = edge(-ROAD_HALF_WIDTH);
 
-  // Red and white kerbs, as alternating blocks between the two edges.
-  fillBands(outerKerb, outerRoad, [COLORS.curbLight, COLORS.curbRed], 6);
-  fillBands(innerRoad, innerKerb, [COLORS.curbRed, COLORS.curbLight], 6);
+  // Continuous tan lines down both sides, as on the original circuit; the
+  // red-and-white blocks read as a race kerb, which this harbour road is not.
+  fillRibbon(outerKerb, outerRoad, COLORS.curbLight);
+  fillRibbon(innerRoad, innerKerb, COLORS.curbLight);
 
   // Lanes are shaded alternately rather than separated by dashed lines. Solid
   // bands read as five distinct channels at a glance, where dashes read as

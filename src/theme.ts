@@ -1,31 +1,44 @@
 /** Every colour the game draws. Nothing else should hard-code a hex value. */
+/**
+ * Daylight marina palette.
+ *
+ * The scene used to be a dark navy harbour at night, which made everything on
+ * it low-contrast. This is the bright version: pale concrete road, tan edge
+ * lines, light blue-grey water and olive banks, with the cars carrying the only
+ * saturated colour on screen so traffic reads instantly against the surface.
+ */
 export const COLORS = {
-  water: '#163D52',
-  waterDeep: '#102F42',
-  waterLine: 'rgba(255,255,255,0.045)',
-  land: '#A8BE79',
-  landLight: '#C0CF91',
-  landDark: '#7F995F',
-  roadShadow: 'rgba(5,14,20,0.48)',
-  roadEdge: '#20282D',
-  curbLight: '#F1E9D7',
-  curbRed: '#D86A59',
-  road: '#58636A',
+  water: '#9DB5C0',
+  waterDeep: '#8FA9B6',
+  waterLine: 'rgba(255,255,255,0.14)',
+  land: '#C6CE7E',
+  landLight: '#D4DA92',
+  landDark: '#A8B265',
+  rock: '#7C7C74',
+
+  roadShadow: 'rgba(70,78,84,0.30)',
+  roadEdge: '#B9B9B1',
+  /** Tan lines run along both sides of the road, as on the original circuit. */
+  curbLight: '#E3C25E',
+  curbRed: '#D8B44E',
+  road: '#D9D9D2',
   /** Every other lane, so the channels read without dashed dividers. */
-  roadAlt: '#6E7B83',
-  roadHighlight: 'rgba(255,255,255,0.045)',
-  lane: 'rgba(246,242,226,0.55)',
-  player: '#F05A47',
-  playerLight: '#FF8D73',
+  roadAlt: '#C4C4BC',
+  roadHighlight: 'rgba(255,255,255,0.18)',
+  lane: 'rgba(255,255,255,0.7)',
+
+  player: '#E8452F',
+  playerLight: '#FF7A5E',
   playerStripe: '#FFF4D8',
-  window: '#C8EDF1',
-  ai: '#161B1E',
-  aiLight: '#31383C',
-  aiWindow: '#69777D',
+  window: '#BFEAF2',
+  ai: '#2C6EA8',
+  aiLight: '#4FA8DC',
+  aiWindow: '#BEE9F7',
+
   text: '#F7F4EA',
   muted: 'rgba(247,244,234,0.66)',
-  accent: '#57D5CB',
-  accentLight: '#C5FFF7',
+  accent: '#2BB6C4',
+  accentLight: '#8FF0FA',
   button: 'rgba(8,17,25,0.82)',
   buttonActive: 'rgba(87,213,203,0.30)',
   buttonDisabled: 'rgba(8,17,25,0.42)',

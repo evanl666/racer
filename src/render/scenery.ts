@@ -22,6 +22,53 @@ function drawTree(x: number, y: number, size = 1): void {
   ctx.restore();
 }
 
+/**
+ * A moored boat: hull, deck and cabin, pointing along `angle`. These are what
+ * make the water read as a marina rather than as empty background.
+ */
+function drawBoat(x: number, y: number, size: number, angle: number): void {
+  const length = 26 * size;
+  const beam = 8.5 * size;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // Shadow on the water.
+  ctx.fillStyle = 'rgba(60,80,92,0.28)';
+  ctx.beginPath();
+  ctx.ellipse(1.5 * size, 1.8 * size, length * 0.5, beam * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hull: a pointed bow at +x tapering to a square transom at -x.
+  ctx.fillStyle = '#F4F3EE';
+  ctx.beginPath();
+  ctx.moveTo(length * 0.5, 0);
+  ctx.quadraticCurveTo(length * 0.12, -beam * 0.5, -length * 0.42, -beam * 0.42);
+  ctx.lineTo(-length * 0.5, -beam * 0.3);
+  ctx.lineTo(-length * 0.5, beam * 0.3);
+  ctx.lineTo(-length * 0.42, beam * 0.42);
+  ctx.quadraticCurveTo(length * 0.12, beam * 0.5, length * 0.5, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Deck and cabin.
+  ctx.fillStyle = '#D8DCDA';
+  ctx.beginPath();
+  ctx.moveTo(length * 0.32, 0);
+  ctx.quadraticCurveTo(length * 0.05, -beam * 0.3, -length * 0.34, -beam * 0.26);
+  ctx.lineTo(-length * 0.34, beam * 0.26);
+  ctx.quadraticCurveTo(length * 0.05, beam * 0.3, length * 0.32, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#9FB0B8';
+  ctx.fillRect(-length * 0.2, -beam * 0.2, length * 0.26, beam * 0.4);
+  ctx.fillStyle = '#5E7480';
+  ctx.fillRect(-length * 0.14, -beam * 0.12, length * 0.14, beam * 0.24);
+  ctx.restore();
+}
+
 function drawUmbrella(x: number, y: number, size = 1): void {
   ctx.save();
   ctx.translate(x, y);
@@ -45,7 +92,7 @@ export function drawBackground(): void {
   const gradient = ctx.createLinearGradient(0, 0, 0, DESIGN_H);
   gradient.addColorStop(0, COLORS.waterDeep);
   gradient.addColorStop(0.55, COLORS.water);
-  gradient.addColorStop(1, '#12364A');
+  gradient.addColorStop(1, '#94AEBA');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 
@@ -92,6 +139,10 @@ export function drawBackground(): void {
     const p = project(x, y);
     drawUmbrella(p.x, p.y, size * p.scale);
   }
+  for (const [x, y, size, angle] of decor.boats) {
+    const p = project(x, y);
+    drawBoat(p.x, p.y, size * p.scale, angle);
+  }
 
   // A few distant buoys fill negative space without competing with cars.
   for (const [x, y] of decor.buoys) {
@@ -114,9 +165,9 @@ function drawVignette(): void {
     DESIGN_W * 0.42, DESIGN_H * 0.38, DESIGN_H * 0.18,
     DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_H * 0.72
   );
-  gradient.addColorStop(0, 'rgba(255,250,235,0.05)');
+  gradient.addColorStop(0, 'rgba(255,255,245,0.10)');
   gradient.addColorStop(0.55, 'rgba(0,0,0,0)');
-  gradient.addColorStop(1, 'rgba(2,8,13,0.5)');
+  gradient.addColorStop(1, 'rgba(40,60,72,0.32)');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
 }

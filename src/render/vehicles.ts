@@ -16,7 +16,7 @@ const PLAYER_STYLE: VehicleStyle = {
   window: COLORS.window,
   lights: '#FFE6A4',
   stripe: COLORS.playerStripe,
-  side: '#9E2C22',
+  side: '#96271B',
   rim: '#FFC9B2'
 };
 
@@ -24,10 +24,10 @@ const AI_STYLE: VehicleStyle = {
   body: COLORS.ai,
   cabin: COLORS.aiLight,
   window: COLORS.aiWindow,
-  lights: '#C5D3D8',
+  lights: '#DCF4FF',
   stripe: null,
-  side: '#080B0D',
-  rim: '#5D6B72'
+  side: '#1B4769',
+  rim: '#7FD4F5'
 };
 
 function drawVehicle(

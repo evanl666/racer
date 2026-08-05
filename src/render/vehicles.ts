@@ -36,13 +36,14 @@ function drawVehicle(
   alpha = 1,
   indicatorDirection = 0,
   indicatorOn = false,
-  spriteKey = ''
+  spriteKey = '',
+  swell = 1
 ): void {
   const p = sampleAtDistance(distance, laneIndex);
 
   const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
   if (sprite) {
-    drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn);
+    drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell);
     return;
   }
 
@@ -129,23 +130,26 @@ function drawSpriteVehicle(
   style: VehicleStyle,
   alpha: number,
   indicatorDirection: number,
-  indicatorOn: boolean
+  indicatorOn: boolean,
+  swell = 1
 ): void {
-  const halfL = CAR_LENGTH / 2;
-  const halfW = CAR_WIDTH / 2;
+  const length = CAR_LENGTH * swell;
+  const width = CAR_WIDTH * swell;
+  const halfL = length / 2;
+  const halfW = width / 2;
 
   ctx.save();
   ctx.globalAlpha = alpha * 0.34;
   ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
   ctx.rotate(p.angle);
-  ctx.drawImage(sprite.shadow as unknown as CanvasImageSource, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+  ctx.drawImage(sprite.shadow as unknown as CanvasImageSource, -halfL, -halfW, length, width);
   ctx.restore();
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(p.x, p.y);
   ctx.rotate(p.angle);
-  ctx.drawImage(sprite.image as unknown as CanvasImageSource, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+  ctx.drawImage(sprite.image as unknown as CanvasImageSource, -halfL, -halfW, length, width);
 
   if (indicatorDirection !== 0 && indicatorOn) {
     ctx.fillStyle = '#FFD55C';
@@ -227,22 +231,39 @@ function drawFireballAura(): void {
 }
 
 /**
- * Afterimage. Three ghosts sampled back through the trail, fading out, which
- * reads as motion blur without costing a blur.
+ * Afterimage.
+ *
+ * Everything about it scales with speed: how many ghosts there are, how far
+ * apart they sit, and how much each one is swollen. At cruise there is nothing;
+ * flat out the car drags a long widening smear, which is the clearest read on
+ * speed the fixed camera allows.
  */
+const MIN_GHOSTS = 2;
+const MAX_GHOSTS = 6;
+
 function drawAfterimage(): void {
   const trail = player.trail;
-  if (trail.length < 6 || player.state === 'CRASHED') return;
+  if (trail.length < 4 || player.state === 'CRASHED') return;
 
   const cruise = currentCruiseSpeed();
-  const intensity = Math.min(1, Math.max(0, (player.speed - cruise * 0.95) / 140));
-  if (intensity <= 0.05) return;
+  const intensity = Math.min(1, Math.max(0, (player.speed - cruise * 0.9) / 180));
+  if (intensity <= 0.04) return;
 
-  for (let ghost = 1; ghost <= 3; ghost++) {
-    const index = trail.length - 1 - ghost * 3;
-    if (index < 0) break;
+  const ghosts = MIN_GHOSTS + Math.round(intensity * (MAX_GHOSTS - MIN_GHOSTS));
+  const stride = 2 + Math.round(intensity * 2);
+
+  // Furthest ghost first, so the nearest one lands on top of the older ones.
+  for (let ghost = ghosts; ghost >= 1; ghost--) {
+    const index = trail.length - 1 - ghost * stride;
+    if (index < 0) continue;
     const sample = trail[index];
-    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity * (0.28 - ghost * 0.07), 0, false, 'player');
+
+    const fade = 1 - ghost / (ghosts + 1);
+    const alpha = intensity * 0.4 * fade;
+    // The smear swells as it trails away, which is what makes it read as blur
+    // rather than as a row of copies.
+    const swell = 1 + intensity * 0.22 * (ghost / ghosts);
+    drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, alpha, 0, false, 'player', swell);
   }
 }
 

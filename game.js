@@ -1781,7 +1781,7 @@ var HarborLoop = (() => {
     const response = load > player.cornering ? 9 : 3.2;
     player.cornering += (load - player.cornering) * (1 - Math.exp(-dt * response));
   }
-  var TRAIL_LENGTH = 12;
+  var TRAIL_LENGTH = 26;
   function recordTrail() {
     player.trail.push({ distance: player.distance, lane: player.visualLane });
     if (player.trail.length > TRAIL_LENGTH) player.trail.shift();
@@ -4497,11 +4497,11 @@ var HarborLoop = (() => {
     side: "#080B0D",
     rim: "#5D6B72"
   };
-  function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false, spriteKey = "") {
+  function drawVehicle(distance, laneIndex, style, alpha = 1, indicatorDirection = 0, indicatorOn = false, spriteKey = "", swell = 1) {
     const p = sampleAtDistance(distance, laneIndex);
     const sprite = spriteKey ? vehicleSprite(spriteKey, style) : null;
     if (sprite) {
-      drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn);
+      drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell);
       return;
     }
     ctx.save();
@@ -4562,20 +4562,22 @@ var HarborLoop = (() => {
     }
     ctx.restore();
   }
-  function drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn) {
-    const halfL = CAR_LENGTH / 2;
-    const halfW = CAR_WIDTH / 2;
+  function drawSpriteVehicle(p, sprite, style, alpha, indicatorDirection, indicatorOn, swell = 1) {
+    const length = CAR_LENGTH * swell;
+    const width = CAR_WIDTH * swell;
+    const halfL = length / 2;
+    const halfW = width / 2;
     ctx.save();
     ctx.globalAlpha = alpha * 0.34;
     ctx.translate(p.x + SHADOW_X * CAR_SHADOW_DISTANCE, p.y + SHADOW_Y * CAR_SHADOW_DISTANCE);
     ctx.rotate(p.angle);
-    ctx.drawImage(sprite.shadow, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+    ctx.drawImage(sprite.shadow, -halfL, -halfW, length, width);
     ctx.restore();
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    ctx.drawImage(sprite.image, -halfL, -halfW, CAR_LENGTH, CAR_WIDTH);
+    ctx.drawImage(sprite.image, -halfL, -halfW, length, width);
     if (indicatorDirection !== 0 && indicatorOn) {
       ctx.fillStyle = "#FFD55C";
       const indicatorY = indicatorDirection > 0 ? halfW - 0.4 : -halfW - 1;
@@ -4648,17 +4650,24 @@ var HarborLoop = (() => {
     ctx.fill();
     ctx.restore();
   }
+  var MIN_GHOSTS = 2;
+  var MAX_GHOSTS = 6;
   function drawAfterimage() {
     const trail = player.trail;
-    if (trail.length < 6 || player.state === "CRASHED") return;
+    if (trail.length < 4 || player.state === "CRASHED") return;
     const cruise = currentCruiseSpeed();
-    const intensity2 = Math.min(1, Math.max(0, (player.speed - cruise * 0.95) / 140));
-    if (intensity2 <= 0.05) return;
-    for (let ghost = 1; ghost <= 3; ghost++) {
-      const index = trail.length - 1 - ghost * 3;
-      if (index < 0) break;
+    const intensity2 = Math.min(1, Math.max(0, (player.speed - cruise * 0.9) / 180));
+    if (intensity2 <= 0.04) return;
+    const ghosts = MIN_GHOSTS + Math.round(intensity2 * (MAX_GHOSTS - MIN_GHOSTS));
+    const stride = 2 + Math.round(intensity2 * 2);
+    for (let ghost = ghosts; ghost >= 1; ghost--) {
+      const index = trail.length - 1 - ghost * stride;
+      if (index < 0) continue;
       const sample = trail[index];
-      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, intensity2 * (0.28 - ghost * 0.07), 0, false, "player");
+      const fade = 1 - ghost / (ghosts + 1);
+      const alpha = intensity2 * 0.4 * fade;
+      const swell = 1 + intensity2 * 0.22 * (ghost / ghosts);
+      drawVehicle(sample.distance, sample.lane, PLAYER_STYLE, alpha, 0, false, "player", swell);
     }
   }
   function drawCars() {

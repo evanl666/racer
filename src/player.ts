@@ -131,8 +131,11 @@ function updateCornering(dt: number): void {
   player.cornering += (load - player.cornering) * (1 - Math.exp(-dt * response));
 }
 
-/** Fixed-length history; the afterimage reads it back at a stride. */
-const TRAIL_LENGTH = 12;
+/**
+ * Fixed-length history; the afterimage reads it back at a stride that widens
+ * with speed, so the buffer has to be long enough for the longest smear.
+ */
+const TRAIL_LENGTH = 26;
 
 function recordTrail(): void {
   player.trail.push({ distance: player.distance, lane: player.visualLane });

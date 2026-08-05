@@ -147,6 +147,8 @@ interface Floater {
 }
 
 const FLOATER_POOL = 8;
+/** Design-space y the numbers will not rise above, keeping them clear of the HUD. */
+const FLOATER_CEILING = 78;
 
 const floaters: Floater[] = Array.from({ length: FLOATER_POOL }, () => ({
   x: 0, y: 0, text: '', life: 0, maxLife: 1, size: 12, color: '#fff'
@@ -155,7 +157,7 @@ const floaters: Floater[] = Array.from({ length: FLOATER_POOL }, () => ({
 let nextFloater = 0;
 
 /** Pops a number above a point; used for the running combo on the player car. */
-export function floatText(x: number, y: number, text: string, color: string, size = 13): void {
+export function floatText(x: number, y: number, text: string, color: string, size = 26, life = 1.05): void {
   const floater = floaters[nextFloater];
   nextFloater = (nextFloater + 1) % FLOATER_POOL;
   floater.x = x;
@@ -163,7 +165,7 @@ export function floatText(x: number, y: number, text: string, color: string, siz
   floater.text = text;
   floater.color = color;
   floater.size = size;
-  floater.maxLife = 0.55;
+  floater.maxLife = life;
   floater.life = floater.maxLife;
 }
 
@@ -171,8 +173,13 @@ export function updateFloaters(dt: number): void {
   for (const floater of floaters) {
     if (floater.life <= 0) continue;
     floater.life -= dt;
-    // Drifts up as it fades, which is what makes it read as a pop rather than a label.
-    floater.y -= dt * 26;
+    // Rises quickly at first and then eases off, so it clears the car without
+    // sailing away over the length of the longer hold.
+    const age = 1 - floater.life / floater.maxLife;
+    floater.y -= dt * 34 * Math.max(0.15, 1 - age);
+    // Stop short of the HUD: a pass near the top of the board used to send the
+    // number up among the readouts.
+    if (floater.y < FLOATER_CEILING) floater.y = FLOATER_CEILING;
   }
 }
 
@@ -182,12 +189,29 @@ export function drawFloaters(): void {
   for (const floater of floaters) {
     if (floater.life <= 0) continue;
     const t = floater.life / floater.maxLife;
-    ctx.globalAlpha = Math.min(1, t * 1.8);
+    const age = 1 - t;
+
+    // Overshoot then settle: the number punches in rather than fading up.
+    const pop = age < 0.16
+      ? 0.5 + (age / 0.16) * 0.72
+      : 1.22 - Math.min(1, (age - 0.16) / 0.2) * 0.22;
+
+    // Holds at full opacity for most of its life, then goes in the last third.
+    ctx.globalAlpha = Math.min(1, t * 3);
+
+    ctx.save();
+    ctx.translate(floater.x, floater.y);
+    ctx.scale(pop, pop);
+
     ctx.font = `900 ${floater.size}px monospace`;
-    ctx.fillStyle = 'rgba(8,17,25,0.75)';
-    ctx.fillText(floater.text, floater.x, floater.y + 1.2);
+    // Heavy dark outline: the number sits over cars and road markings.
+    ctx.lineWidth = floater.size * 0.28;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(6,14,20,0.9)';
+    ctx.strokeText(floater.text, 0, 0);
     ctx.fillStyle = floater.color;
-    ctx.fillText(floater.text, floater.x, floater.y);
+    ctx.fillText(floater.text, 0, 0);
+    ctx.restore();
   }
   ctx.restore();
 }

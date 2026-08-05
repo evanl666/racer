@@ -2810,6 +2810,7 @@ var HarborLoop = (() => {
     return count;
   }
   var FLOATER_POOL = 8;
+  var FLOATER_CEILING = 78;
   var floaters = Array.from({ length: FLOATER_POOL }, () => ({
     x: 0,
     y: 0,
@@ -2820,7 +2821,7 @@ var HarborLoop = (() => {
     color: "#fff"
   }));
   var nextFloater = 0;
-  function floatText(x, y, text, color, size = 13) {
+  function floatText(x, y, text, color, size = 26, life = 1.05) {
     const floater = floaters[nextFloater];
     nextFloater = (nextFloater + 1) % FLOATER_POOL;
     floater.x = x;
@@ -2828,14 +2829,16 @@ var HarborLoop = (() => {
     floater.text = text;
     floater.color = color;
     floater.size = size;
-    floater.maxLife = 0.55;
+    floater.maxLife = life;
     floater.life = floater.maxLife;
   }
   function updateFloaters(dt) {
     for (const floater of floaters) {
       if (floater.life <= 0) continue;
       floater.life -= dt;
-      floater.y -= dt * 26;
+      const age = 1 - floater.life / floater.maxLife;
+      floater.y -= dt * 34 * Math.max(0.15, 1 - age);
+      if (floater.y < FLOATER_CEILING) floater.y = FLOATER_CEILING;
     }
   }
   function drawFloaters() {
@@ -2844,12 +2847,20 @@ var HarborLoop = (() => {
     for (const floater of floaters) {
       if (floater.life <= 0) continue;
       const t = floater.life / floater.maxLife;
-      ctx.globalAlpha = Math.min(1, t * 1.8);
+      const age = 1 - t;
+      const pop = age < 0.16 ? 0.5 + age / 0.16 * 0.72 : 1.22 - Math.min(1, (age - 0.16) / 0.2) * 0.22;
+      ctx.globalAlpha = Math.min(1, t * 3);
+      ctx.save();
+      ctx.translate(floater.x, floater.y);
+      ctx.scale(pop, pop);
       ctx.font = `900 ${floater.size}px monospace`;
-      ctx.fillStyle = "rgba(8,17,25,0.75)";
-      ctx.fillText(floater.text, floater.x, floater.y + 1.2);
+      ctx.lineWidth = floater.size * 0.28;
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(6,14,20,0.9)";
+      ctx.strokeText(floater.text, 0, 0);
       ctx.fillStyle = floater.color;
-      ctx.fillText(floater.text, floater.x, floater.y);
+      ctx.fillText(floater.text, 0, 0);
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -4939,8 +4950,9 @@ var HarborLoop = (() => {
         player.passPopElapsed = 0;
         car.passIndex = currentPassIndex;
         audio.playOvertake(player.combo, overtakes);
-        const passPoint = sampleAtDistance(player.distance, player.visualLane);
-        floatText(passPoint.x, passPoint.y - 9, `${player.combo}`, "#C5FFF7", 13);
+        const passPlane = sampleAtDistance(player.distance, player.visualLane);
+        const passPoint = project(passPlane.x, passPlane.y);
+        floatText(passPoint.x, passPoint.y - 14 * passPoint.scale, `${player.combo}`, "#C5FFF7", 26 * passPoint.scale);
         if (newTier > previousTier) {
           player.tierBoostElapsed = PLAYER_TIER_BOOST_DURATION;
           audio.playSpeedTierUp(newTier);

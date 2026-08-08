@@ -23,7 +23,16 @@ export type ModeId =
   | 'time-attack'
   | 'endurance';
 
-export type Difficulty = 'normal' | 'turbo' | 'master';
+/**
+ * One setting, the hardest one. Normal and Turbo were cut: the game is about
+ * the Master field, and offering two softer versions of it only let players
+ * choose the one that taught them less.
+ *
+ * Kept as a type rather than deleted outright so scores stay partitioned by
+ * `mode:difficulty` in storage and on the leaderboard, which is what lets a
+ * second setting come back later without a migration.
+ */
+export type Difficulty = 'master';
 
 export type RunOutcome = 'running' | 'cleared' | 'timeout' | 'wrecked';
 

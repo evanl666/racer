@@ -162,4 +162,4 @@ export { countdownActive, countdownRemaining, clearCountdown } from './countdown
 export { setSeed, clearSeed, random, isSeeded } from './rng';
 export { bestScore, careerPoints } from './storage';
 export { TRACKS } from './tracks';
-export { totalStars, starsFor, modeUnlocked, modeUnlockCost, difficultyUnlocked, setUnlockOverride } from './progress';
+export { totalStars, starsFor, modeUnlocked, modeUnlockCost, setUnlockOverride } from './progress';

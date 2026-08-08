@@ -59,7 +59,6 @@ var HarborLoop = (() => {
     dailyPlan: () => dailyPlan,
     dailyStage: () => dailyStage,
     debugPointerCount: () => debugPointerCount,
-    difficultyUnlocked: () => difficultyUnlocked,
     feelState: () => feelState,
     inputState: () => inputState,
     isSeeded: () => isSeeded,
@@ -133,28 +132,6 @@ var HarborLoop = (() => {
 
   // src/difficulty.ts
   var DIFFICULTY_PROFILES = {
-    normal: {
-      label: "NORMAL",
-      blurb: "24 车 · 基准速度 · AI 会让路",
-      playerSpeed: 1,
-      trafficSpeed: 1,
-      carCount: 24,
-      aiSafetyScale: 0.85,
-      aiDecisionScale: 0.85,
-      maxSimultaneousAi: 3,
-      invincibleSeconds: 1.25
-    },
-    turbo: {
-      label: "TURBO",
-      blurb: "30 车 · 更快 · AI 更早并线",
-      playerSpeed: 1.22,
-      trafficSpeed: 1.2,
-      carCount: 30,
-      aiSafetyScale: 0.58,
-      aiDecisionScale: 0.58,
-      maxSimultaneousAi: 4,
-      invincibleSeconds: 1
-    },
     master: {
       label: "MASTER",
       blurb: "36 车 · 最快 · AI 几乎不让路",
@@ -168,15 +145,14 @@ var HarborLoop = (() => {
     }
   };
   var DIFFICULTY_LABEL = {
-    normal: DIFFICULTY_PROFILES.normal.label,
-    turbo: DIFFICULTY_PROFILES.turbo.label,
     master: DIFFICULTY_PROFILES.master.label
   };
-  var DIFFICULTIES = ["normal", "turbo", "master"];
+  var DEFAULT_DIFFICULTY = "master";
+  var DIFFICULTIES = ["master"];
   var tuning = {
-    profile: DIFFICULTY_PROFILES.normal,
-    player: 1,
-    traffic: 1
+    profile: DIFFICULTY_PROFILES.master,
+    player: DIFFICULTY_PROFILES.master.playerSpeed,
+    traffic: DIFFICULTY_PROFILES.master.trafficSpeed
   };
   function applyTuning(difficulty, trafficScale) {
     const profile = DIFFICULTY_PROFILES[difficulty];
@@ -2191,9 +2167,9 @@ var HarborLoop = (() => {
   function dailyStage(plan, stage) {
     const mode = modeById(plan.modeId);
     if (stage === 1) {
-      return { stage: 1, difficulty: "normal", target: mode.stars[0] };
+      return { stage: 1, difficulty: DEFAULT_DIFFICULTY, target: mode.stars[0] };
     }
-    return { stage: 2, difficulty: "master", target: Math.round(mode.stars[2] * 1.45) };
+    return { stage: 2, difficulty: DEFAULT_DIFFICULTY, target: Math.round(mode.stars[2] * 1.45) };
   }
 
   // src/render/icons.ts
@@ -2611,17 +2587,7 @@ var HarborLoop = (() => {
   }
   var STARTING_MODE_COUNT = 3;
   var MODE_UNLOCK_COST = [3, 6, 10, 14, 19, 24, 30, 36, 43, 50, 58, 66, 75];
-  function difficultyCosts() {
-    const ceiling = RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
-    return {
-      normal: 0,
-      turbo: Math.max(2, Math.round(ceiling * 0.33)),
-      master: Math.max(4, Math.round(ceiling * 0.66))
-    };
-  }
   var DIFFICULTY_STAR_SCALE = {
-    normal: 1,
-    turbo: 1.15,
     master: 1.3
   };
   function starTarget(mode, tier, difficulty) {
@@ -2665,19 +2631,8 @@ var HarborLoop = (() => {
     if (!RELEASED_MODE_IDS.has(modeId)) return false;
     return stars >= modeUnlockCost(modeId);
   }
-  function difficultyUnlockCost(difficulty) {
-    return difficultyCosts()[difficulty];
-  }
-  function difficultyUnlocked(difficulty, stars = totalStars()) {
-    return unlockOverride || stars >= difficultyCosts()[difficulty];
-  }
   function nextUnlock() {
     const stars = totalStars();
-    const costs = difficultyCosts();
-    for (const difficulty of DIFFICULTIES) {
-      const cost = costs[difficulty];
-      if (stars < cost) return { label: DIFFICULTY_PROFILES[difficulty].label, cost };
-    }
     for (const mode of RELEASED_MODES) {
       const cost = modeUnlockCost(mode.id);
       if (stars < cost) return { label: mode.name, cost };
@@ -2932,7 +2887,7 @@ var HarborLoop = (() => {
   // src/run.ts
   var run = {
     modeId: MODES[0].id,
-    difficulty: "normal",
+    difficulty: DEFAULT_DIFFICULTY,
     elapsed: 0,
     timeRemaining: Infinity,
     score: 0,
@@ -3029,7 +2984,7 @@ var HarborLoop = (() => {
   // src/app.ts
   var app = {
     screen: "MENU",
-    difficulty: "normal",
+    difficulty: DEFAULT_DIFFICULTY,
     /** Pixels the mode list is scrolled by; only used when the list overflows. */
     menuScroll: 0,
     result: null
@@ -3440,21 +3395,16 @@ var HarborLoop = (() => {
 
   // src/screens/menu.ts
   var MARGIN = 14;
-  var PILL_Y = 78;
-  var PILL_H = 34;
-  var DAILY_Y = 142;
+  var SETTING_Y = 82;
+  var DAILY_Y = 96;
   var DAILY_H = 44;
-  var LIST_TOP = 196;
+  var LIST_TOP = 152;
   var ROW_H = 36;
   var ROW_GAP = 2;
   var toast = { text: "", timer: 0 };
   function updateMenu(dt) {
     toast.timer = Math.max(0, toast.timer - dt);
     if (toast.timer <= 0) toast.text = "";
-  }
-  function pillRect(index) {
-    const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
-    return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
   }
   var DAILY_RECT = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
   var MUTE_RECT = { x: 0, y: 22, w: 32, h: 26 };
@@ -3494,38 +3444,20 @@ var HarborLoop = (() => {
     ctx.fillStyle = "rgba(255,246,228,0.55)";
     ctx.font = "600 10px sans-serif";
     const streak = currentStreak();
-    const progressText = next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : "全部模式和难度已解锁";
+    let progressText;
+    if (next) progressText = `再拿 ${next.cost - stars} 颗星解锁 ${next.label}`;
+    else if (stars < maxStars()) progressText = `再拿 ${maxStars() - stars} 颗星拿满`;
+    else progressText = "星星已拿满";
     ctx.fillText(streak > 1 ? `连续 ${streak} 天 · ${progressText}` : progressText, MARGIN, 60);
-    DIFFICULTIES.forEach((difficulty, index) => {
-      const rect = pillRect(index);
-      const unlocked = difficultyUnlocked(difficulty, stars);
-      const selected = app.difficulty === difficulty && unlocked;
-      panel(rect, {
-        fill: selected ? UI.primary : UI.chip,
-        radius: rect.h / 2,
-        lift: selected ? 4 : 2
-      });
-      ctx.textAlign = "center";
-      if (!unlocked) {
-        const cost = String(difficultyUnlockCost(difficulty));
-        ctx.font = "900 11px sans-serif";
-        const width = ctx.measureText(cost).width;
-        const centre = rect.x + rect.w / 2;
-        drawLock(centre - width / 2 - 16, rect.y + rect.h / 2, 9, "rgba(255,246,228,0.5)");
-        drawStar(centre - width / 2 - 2, rect.y + rect.h / 2 - 1, 5, "rgba(255,246,228,0.5)", true);
-        ctx.textAlign = "left";
-        ctx.fillStyle = "rgba(255,246,228,0.5)";
-        ctx.fillText(cost, centre - width / 2 + 6, rect.y + rect.h / 2 + 4);
-      } else {
-        ctx.fillStyle = selected ? UI.ink : UI.card;
-        ctx.font = "900 13px sans-serif";
-        ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
-      }
-    });
-    ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,246,228,0.72)";
-    ctx.font = "600 11px sans-serif";
-    ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
+    const profile = DIFFICULTY_PROFILES[app.difficulty];
+    ctx.textAlign = "left";
+    ctx.fillStyle = UI.primary;
+    ctx.font = "900 12px sans-serif";
+    ctx.fillText(profile.label, MARGIN, SETTING_Y);
+    const labelWidth = ctx.measureText(profile.label).width;
+    ctx.fillStyle = "rgba(255,246,228,0.6)";
+    ctx.font = "600 10px sans-serif";
+    ctx.fillText(`· ${profile.blurb}`, MARGIN + labelWidth + 7, SETTING_Y);
     drawDailyCard();
     RELEASED_MODES.forEach((mode, index) => {
       drawModeRow(mode.id, index, stars);
@@ -3633,18 +3565,6 @@ var HarborLoop = (() => {
     if (hits(DAILY_RECT, x, y)) {
       audio.playUiConfirm();
       startDaily();
-      return true;
-    }
-    for (let i = 0; i < DIFFICULTIES.length; i++) {
-      if (!hits(pillRect(i), x, y)) continue;
-      const difficulty = DIFFICULTIES[i];
-      if (!difficultyUnlocked(difficulty, stars)) {
-        audio.playUiDenied();
-        showToast(`需要 ${difficultyUnlockCost(difficulty)} 颗星解锁`);
-      } else {
-        audio.playUiTap();
-        app.difficulty = difficulty;
-      }
       return true;
     }
     for (let i = 0; i < RELEASED_MODES.length; i++) {

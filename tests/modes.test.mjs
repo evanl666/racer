@@ -41,7 +41,7 @@ check('exactly one mode has shipped', game.RELEASED_MODES.length === 1,
 check('a locked mode refuses to start', game.startMode('endurance') === false);
 check('refusing to start leaves you in the menu', game.app.screen === 'MENU');
 check('the released mode is playable', game.modeUnlocked(game.RELEASED_MODES[0].id));
-check('turbo is locked at zero stars', game.difficultyUnlocked('turbo') === false);
+check('Master is the setting you start on', game.app.difficulty === 'master', game.app.difficulty);
 check('unreleased modes are not merely locked but absent',
   game.MODES.filter((mode) => !game.RELEASED_MODES.includes(mode)).every((mode) => !game.modeUnlocked(mode.id)));
 
@@ -103,43 +103,20 @@ check(
   `${slowSpeeds[0].toFixed(1)} vs ${normalSpeeds[0].toFixed(1)}`
 );
 
-// Difficulty scales both the player and the traffic.
-game.app.difficulty = 'normal';
+// Master is the only setting left, so what matters is that every run actually
+// gets the Master field rather than the unscaled baseline.
 game.startMode('speed-monkey');
 game.clearCountdown();
-const normalPlayer = game.player.speed;
-const normalTraffic = game.aiCars[0].baseSpeed;
-game.app.difficulty = 'master';
-game.startMode('speed-monkey');
-game.clearCountdown();
+check('a run puts the full Master field on track', game.aiCars.length === 36,
+  `cars=${game.aiCars.length}`);
+// PLAYER_CRUISE_BASE_SPEED in config.ts; Master multiplies it by 1.45.
+const BASE_CRUISE = 125;
 check(
-  'Master raises the player cruise speed',
-  game.player.speed > normalPlayer * 1.4,
-  `${normalPlayer.toFixed(0)} -> ${game.player.speed.toFixed(0)}`
+  'Master scales the player off the baseline cruise speed',
+  game.player.speed > BASE_CRUISE * 1.4,
+  `${game.player.speed.toFixed(0)}`
 );
-check(
-  'Master raises the traffic speed',
-  game.aiCars[0].baseSpeed > normalTraffic * 1.4,
-  `${normalTraffic.toFixed(0)} -> ${game.aiCars[0].baseSpeed.toFixed(0)}`
-);
-game.app.difficulty = 'normal';
-
-// Difficulty is more than speed: the field size changes too.
-const counts = {};
-for (const difficulty of ['normal', 'turbo', 'master']) {
-  game.app.difficulty = difficulty;
-  game.startMode('speed-monkey');
-  game.clearCountdown();
-  counts[difficulty] = game.aiCars.length;
-}
-check(
-  'each difficulty puts a different amount of traffic on track',
-  counts.normal < counts.turbo && counts.turbo < counts.master,
-  `${counts.normal} / ${counts.turbo} / ${counts.master}`
-);
-check('Normal is no longer the old 18-car field', counts.normal >= 24, `cars=${counts.normal}`);
 check('every car sits in a valid lane', game.aiCars.every((car) => car.lane >= 0 && car.lane < 5));
-game.app.difficulty = 'normal';
 
 // The static scene is cached on an offscreen canvas, which must be a *second*
 // canvas; drawing the layer onto the display canvas would blank the frame.
@@ -187,14 +164,12 @@ check('In The Zone marks six cars', zoned === 6, `marked=${zoned}`);
 // --- game feel -------------------------------------------------------------
 // Near misses should happen naturally in dense traffic, and each one grants a
 // short acceleration boost so the risky line is genuinely faster.
-game.app.difficulty = 'master';
 game.startMode('sunday-drivers');
 game.clearCountdown();
 fire('start', [THROTTLE]);
 step(45);
 fire('cancel', [THROTTLE]);
 check('close calls are detected in traffic', game.run.closeCalls > 0, `close=${game.run.closeCalls}`);
-game.app.difficulty = 'normal';
 
 // A crash must produce particles, a freeze and a shake. Combo Racers survives a
 // crash, so the effects can be watched decaying instead of the run ending.
@@ -239,29 +214,27 @@ check('a new run starts with no hit-stop or shake',
 game.openMenu();
 check('menu is reachable again', game.app.screen === 'MENU');
 
-// The daily card sits at y=142..186, above the mode list at y=196.
-fire('start', [touch(9, 195, 164)]);
-fire('end', [touch(9, 195, 164)]);
+// The daily card sits at y=96..140, above the mode list starting at y=152.
+fire('start', [touch(9, 195, 118)]);
+fire('end', [touch(9, 195, 118)]);
 check('tapping the daily card starts the daily run',
   game.app.screen === 'PLAYING' && game.run.daily === true, `screen=${game.app.screen}`);
 game.clearCountdown();
 
 game.openMenu();
-fire('start', [touch(11, 195, 210)]);
-fire('end', [touch(11, 195, 210)]);
+fire('start', [touch(11, 195, 170)]);
+fire('end', [touch(11, 195, 170)]);
 check('tapping the mode row starts that mode',
   game.app.screen === 'PLAYING' && game.run.daily === false, `screen=${game.app.screen}`);
 game.clearCountdown();
 
-// Tapping a difficulty pill switches difficulty.
+// The difficulty pills are gone and the cards below moved up. A tap in the strip
+// they vacated (y=84..95) must fall through rather than hit the daily card.
 game.openMenu();
-// Checked with the override off, since that is what a real player faces.
-game.setUnlockOverride(false);
-fire('start', [touch(10, 300, 95)]);
-fire('end', [touch(10, 300, 95)]);
-check('a locked difficulty pill refuses rather than switching',
-  game.app.difficulty === 'normal', game.app.difficulty);
-game.setUnlockOverride(true);
+fire('start', [touch(10, 300, 88)]);
+fire('end', [touch(10, 300, 88)]);
+check('tapping the old pill row no longer starts anything',
+  game.app.screen === 'MENU', game.app.screen);
 
 // Scores persist per mode and difficulty.
 game.startMode('sunday-drivers');
@@ -269,7 +242,7 @@ game.clearCountdown();
 fire('start', [THROTTLE]);
 step(62);
 fire('cancel', [THROTTLE]);
-const best = game.bestScore('sunday-drivers', 'normal');
+const best = game.bestScore('sunday-drivers', 'master');
 check('a completed run records a personal best', typeof best === 'number' && best > 0, `best=${best}`);
 check('career points include that best', game.careerPoints() >= best, `career=${game.careerPoints()}`);
 

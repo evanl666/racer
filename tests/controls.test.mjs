@@ -99,24 +99,35 @@ const results = [];
 const check = (name, pass, detail = '') => results.push({ name, pass: Boolean(pass), detail });
 
 // --- throttle -------------------------------------------------------------
+// The speed curve is authored on a 125 base cruise with a fixed 60 throttle
+// margin, then multiplied by the difficulty profile. Master is the only setting
+// left and it scales the player by 1.45, so every figure below carries it.
+const BASE_CRUISE = 125;
+const THROTTLE_MARGIN = 60;
+const MASTER_SCALE = 1.45;
+const CRUISE = BASE_CRUISE * MASTER_SCALE;
+const THROTTLE_TOP = (BASE_CRUISE + THROTTLE_MARGIN) * MASTER_SCALE;
+
 resetWithoutTraffic();
 check('idle: throttle off', game.inputState.throttle === false);
-check('idle: cruises at tier-0 speed', Math.abs(game.player.speed - 125) < 1, `speed=${game.player.speed.toFixed(1)}`);
+check('idle: cruises at tier-0 speed', Math.abs(game.player.speed - CRUISE) < 1,
+  `speed=${game.player.speed.toFixed(1)}`);
 check('starting a mode enters the race screen', game.app.screen === 'PLAYING', game.app.screen);
 
 fire('start', [THROTTLE]);
 step(0.05);
 check('throttle press engages', game.inputState.throttle === true);
 step(1.5);
-// Cruise 125 plus the fixed throttle margin of 60.
-check('throttle held reaches cruise plus the throttle margin', Math.abs(game.player.speed - 185) < 1,
+check('throttle held reaches cruise plus the throttle margin',
+  Math.abs(game.player.speed - THROTTLE_TOP) < 1,
   `speed=${game.player.speed.toFixed(1)}`);
 
 fire('end', [THROTTLE]);
 step(0.05);
 check('throttle release disengages', game.inputState.throttle === false);
 step(2.0);
-check('release coasts back to cruise', Math.abs(game.player.speed - 125) < 2, `speed=${game.player.speed.toFixed(1)}`);
+check('release coasts back to cruise', Math.abs(game.player.speed - CRUISE) < 2,
+  `speed=${game.player.speed.toFixed(1)}`);
 check('no pointers leak after release', game.debugPointerCount() === 0);
 
 // --- lane buttons ---------------------------------------------------------

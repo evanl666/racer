@@ -1,6 +1,6 @@
 /** Run lifecycle: starting a mode, ticking its rules, deciding when it ends. */
 
-import { applyTuning } from './difficulty';
+import { applyTuning, DEFAULT_DIFFICULTY } from './difficulty';
 import { resetEffects } from './effects';
 import { MODES, modeById } from './modes';
 import { clearSeed, setSeed } from './rng';
@@ -16,7 +16,7 @@ import { setTrack } from './track';
 
 export const run: RunState = {
   modeId: MODES[0].id,
-  difficulty: 'normal',
+  difficulty: DEFAULT_DIFFICULTY,
   elapsed: 0,
   timeRemaining: Infinity,
   score: 0,

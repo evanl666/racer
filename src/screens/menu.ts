@@ -1,15 +1,13 @@
-/** Mode select: progress header, difficulty pills, and one card per mode. */
+/** Mode select: progress header, the daily card, and one card per mode. */
 
 import { app, startDaily, startMode } from '../app';
 import { audio } from '../audio';
 import { dailyPlan } from '../daily';
-import { DIFFICULTIES, DIFFICULTY_PROFILES } from '../difficulty';
+import { DIFFICULTY_PROFILES } from '../difficulty';
 import { RELEASED_MODES as MODES, ORIGINAL_MODE_IDS } from '../modes';
 import { trackById } from '../tracks';
 import { ctx, DESIGN_H, DESIGN_W } from '../platform';
 import {
-  difficultyUnlockCost,
-  difficultyUnlocked,
   maxStars,
   modeUnlockCost,
   modeUnlocked,
@@ -24,11 +22,15 @@ import { currentStreak } from '../streak';
 import { UI } from '../theme';
 
 const MARGIN = 14;
-const PILL_Y = 78;
-const PILL_H = 34;
-const DAILY_Y = 142;
+/**
+ * The difficulty pills used to sit here. With Master the only setting there is
+ * nothing to pick, so the row collapsed to a single line stating the field you
+ * are about to race, and everything below moved up to close the gap.
+ */
+const SETTING_Y = 82;
+const DAILY_Y = 96;
 const DAILY_H = 44;
-const LIST_TOP = 196;
+const LIST_TOP = 152;
 const ROW_H = 36;
 const ROW_GAP = 2;
 
@@ -38,11 +40,6 @@ const toast = { text: '', timer: 0 };
 export function updateMenu(dt: number): void {
   toast.timer = Math.max(0, toast.timer - dt);
   if (toast.timer <= 0) toast.text = '';
-}
-
-function pillRect(index: number): Rect {
-  const w = (DESIGN_W - MARGIN * 2 - 12) / 3;
-  return { x: MARGIN + index * (w + 6), y: PILL_Y, w, h: PILL_H };
 }
 
 const DAILY_RECT: Rect = { x: MARGIN, y: DAILY_Y, w: DESIGN_W - MARGIN * 2, h: DAILY_H };
@@ -87,42 +84,25 @@ export function drawMenu(): void {
   ctx.fillStyle = 'rgba(255,246,228,0.55)';
   ctx.font = '600 10px sans-serif';
   const streak = currentStreak();
-  const progressText = next ? `再拿 ${next.cost - stars} 颗星解锁 ${next.label}` : '全部模式和难度已解锁';
+  // Nothing left in the ladder once the modes are open, so the line falls back
+  // to the stars still missing rather than claiming everything is done.
+  let progressText: string;
+  if (next) progressText = `再拿 ${next.cost - stars} 颗星解锁 ${next.label}`;
+  else if (stars < maxStars()) progressText = `再拿 ${maxStars() - stars} 颗星拿满`;
+  else progressText = '星星已拿满';
   ctx.fillText(streak > 1 ? `连续 ${streak} 天 · ${progressText}` : progressText, MARGIN, 60);
 
-  // Difficulty.
-  DIFFICULTIES.forEach((difficulty, index) => {
-    const rect = pillRect(index);
-    const unlocked = difficultyUnlocked(difficulty, stars);
-    const selected = app.difficulty === difficulty && unlocked;
-    panel(rect, {
-      fill: selected ? UI.primary : UI.chip,
-      radius: rect.h / 2,
-      lift: selected ? 4 : 2
-    });
-
-    ctx.textAlign = 'center';
-    if (!unlocked) {
-      const cost = String(difficultyUnlockCost(difficulty));
-      ctx.font = '900 11px sans-serif';
-      const width = ctx.measureText(cost).width;
-      const centre = rect.x + rect.w / 2;
-      drawLock(centre - width / 2 - 16, rect.y + rect.h / 2, 9, 'rgba(255,246,228,0.5)');
-      drawStar(centre - width / 2 - 2, rect.y + rect.h / 2 - 1, 5, 'rgba(255,246,228,0.5)', true);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,246,228,0.5)';
-      ctx.fillText(cost, centre - width / 2 + 6, rect.y + rect.h / 2 + 4);
-    } else {
-      ctx.fillStyle = selected ? UI.ink : UI.card;
-      ctx.font = '900 13px sans-serif';
-      ctx.fillText(DIFFICULTY_PROFILES[difficulty].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
-    }
-  });
-
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,246,228,0.72)';
-  ctx.font = '600 11px sans-serif';
-  ctx.fillText(DIFFICULTY_PROFILES[app.difficulty].blurb, DESIGN_W / 2, 130);
+  // Master is the only setting, so this states the field rather than offering a
+  // choice. Players still need to know what they are driving into.
+  const profile = DIFFICULTY_PROFILES[app.difficulty];
+  ctx.textAlign = 'left';
+  ctx.fillStyle = UI.primary;
+  ctx.font = '900 12px sans-serif';
+  ctx.fillText(profile.label, MARGIN, SETTING_Y);
+  const labelWidth = ctx.measureText(profile.label).width;
+  ctx.fillStyle = 'rgba(255,246,228,0.6)';
+  ctx.font = '600 10px sans-serif';
+  ctx.fillText(`· ${profile.blurb}`, MARGIN + labelWidth + 7, SETTING_Y);
 
   drawDailyCard();
 
@@ -259,19 +239,6 @@ export function handleMenuTap(x: number, y: number): boolean {
   if (hits(DAILY_RECT, x, y)) {
     audio.playUiConfirm();
     startDaily();
-    return true;
-  }
-
-  for (let i = 0; i < DIFFICULTIES.length; i++) {
-    if (!hits(pillRect(i), x, y)) continue;
-    const difficulty = DIFFICULTIES[i];
-    if (!difficultyUnlocked(difficulty, stars)) {
-      audio.playUiDenied();
-      showToast(`需要 ${difficultyUnlockCost(difficulty)} 颗星解锁`);
-    } else {
-      audio.playUiTap();
-      app.difficulty = difficulty;
-    }
     return true;
   }
 

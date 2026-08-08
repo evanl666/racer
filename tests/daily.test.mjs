@@ -33,7 +33,9 @@ check('Time Attack is excluded from the pool',
 // --- stage targets ----------------------------------------------------------
 const stage1 = game.dailyStage(a, 1);
 const stage2 = game.dailyStage(a, 2);
-check('stage one runs on Normal', stage1.difficulty === 'normal');
+// Both stages race the same Master field now, so the whole step between them is
+// the target score.
+check('stage one runs on Master', stage1.difficulty === 'master');
 check('stage two runs on Master', stage2.difficulty === 'master');
 check('stage two demands far more', stage2.target > stage1.target * 3,
   `${stage1.target} -> ${stage2.target}`);
@@ -101,7 +103,7 @@ step(0.05);
 check('clearing stage one starts stage two immediately',
   game.run.stage === 2 && game.app.screen === 'PLAYING',
   `stage=${game.run.stage} screen=${game.app.screen}`);
-check('stage two is harder than stage one', game.run.difficulty === 'master', game.run.difficulty);
+check('stage two runs the Master field', game.run.difficulty === 'master', game.run.difficulty);
 
 // Failing stage two shows the result, and it must not overwrite mode bests.
 const beforeBest = game.bestScore(game.run.modeId, 'master');
@@ -208,6 +210,11 @@ check('a broken chain reports zero', game.currentStreak('2026-03-20') === 0,
 check('an unbroken chain still reports', game.currentStreak('2026-03-06') === 1,
   `${game.currentStreak('2026-03-06')}`);
 
+// Master is the only difficulty, and it multiplies every authored player speed
+// by 1.45, so the raw figures below carry it.
+const MASTER_SCALE = 1.45;
+const MASTER_CRUISE = 125 * MASTER_SCALE;
+
 // --- countdown --------------------------------------------------------------
 // Three seconds where nothing moves, including the clock and the controls.
 game.setUnlockOverride(true);
@@ -219,7 +226,8 @@ fire('start', [THROTTLE]);
 step(1.0);
 check('the world holds still during the countdown', game.player.distance === frozenAt,
   `${frozenAt.toFixed(2)} -> ${game.player.distance.toFixed(2)}`);
-check('the throttle is ignored during the countdown', game.player.speed === 125,
+check('the throttle is ignored during the countdown',
+  Math.abs(game.player.speed - MASTER_CRUISE) < 0.01,
   `${game.player.speed.toFixed(1)}`);
 check('the run clock has not started', game.run.elapsed === 0, `${game.run.elapsed}`);
 
@@ -250,6 +258,6 @@ check('the first ten passes are where the speed comes from', at10 - at0 >= 55,
 check('late passes add far less than early ones',
   (at200 - at50) / 150 < (at10 - at0) / 10 / 4,
   `early ${(at10 - at0) / 10}/pass, late ${((at200 - at50) / 150).toFixed(2)}/pass`);
-check('cruise speed is capped', at200 <= 380, `${at200}`);
+check('cruise speed is capped', at200 <= 380 * MASTER_SCALE, `${at200}`);
 
 finish();

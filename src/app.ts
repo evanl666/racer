@@ -2,6 +2,7 @@
 
 import { audio } from './audio';
 import { dailyPlan, dailyStage, todayKey } from './daily';
+import { DEFAULT_DIFFICULTY } from './difficulty';
 import { setShareContext, shareRun } from './share';
 import { submitFriendScore, submitGlobalScore } from './leaderboard';
 import { MODES } from './modes';
@@ -30,7 +31,7 @@ export interface ResultSummary {
 
 export const app = {
   screen: 'MENU' as Screen,
-  difficulty: 'normal' as Difficulty,
+  difficulty: DEFAULT_DIFFICULTY as Difficulty,
   /** Pixels the mode list is scrolled by; only used when the list overflows. */
   menuScroll: 0,
   result: null as ResultSummary | null

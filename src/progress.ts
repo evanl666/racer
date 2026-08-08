@@ -3,12 +3,15 @@
  *
  * Stars are the single currency. Each (mode, difficulty) awards 0-3 of them by
  * comparing your best score against that mode's thresholds, so every star comes
- * from a score you actually posted. Modes and difficulties past the starting set
- * are gated on the running total, which means progress never dead-ends: any mode
- * you can already play will eventually open the next one.
+ * from a score you actually posted. Modes past the starting set are gated on the
+ * running total, which means progress never dead-ends: any mode you can already
+ * play will eventually open the next one.
+ *
+ * Difficulty is no longer part of the ladder — there is only Master — so the
+ * only thing stars still gate is the mode list.
  */
 
-import { DIFFICULTIES, DIFFICULTY_PROFILES } from './difficulty';
+import { DIFFICULTIES } from './difficulty';
 import { RELEASED_MODE_IDS, RELEASED_MODES, modeById } from './modes';
 import type { Difficulty, ModeDefinition, ModeId } from './modes/types';
 import { bestScore } from './storage';
@@ -37,23 +40,11 @@ const STARTING_MODE_COUNT = 3;
 const MODE_UNLOCK_COST = [3, 6, 10, 14, 19, 24, 30, 36, 43, 50, 58, 66, 75];
 
 /**
- * Difficulty costs scale with what has actually shipped, or a single-mode
- * release would put Master permanently out of reach: one mode can only ever
- * yield nine stars.
+ * Star thresholds are authored for the baseline field and scaled up for harder
+ * settings. Master keeps the 1.3 it has always carried, so removing the softer
+ * settings left every threshold a player actually faces exactly where it was.
  */
-function difficultyCosts(): Record<Difficulty, number> {
-  const ceiling = RELEASED_MODES.length * DIFFICULTIES.length * MAX_STARS_PER_ENTRY;
-  return {
-    normal: 0,
-    turbo: Math.max(2, Math.round(ceiling * 0.33)),
-    master: Math.max(4, Math.round(ceiling * 0.66))
-  };
-}
-
-/** Harder settings demand a higher score for the same star. */
 const DIFFICULTY_STAR_SCALE: Record<Difficulty, number> = {
-  normal: 1,
-  turbo: 1.15,
   master: 1.3
 };
 
@@ -109,23 +100,10 @@ export function modeUnlocked(modeId: ModeId, stars = totalStars()): boolean {
   return stars >= modeUnlockCost(modeId);
 }
 
-export function difficultyUnlockCost(difficulty: Difficulty): number {
-  return difficultyCosts()[difficulty];
-}
-
-export function difficultyUnlocked(difficulty: Difficulty, stars = totalStars()): boolean {
-  return unlockOverride || stars >= difficultyCosts()[difficulty];
-}
-
 /** The next thing the ladder will open, for the menu's progress line. */
 export function nextUnlock(): { label: string; cost: number } | null {
   const stars = totalStars();
 
-  const costs = difficultyCosts();
-  for (const difficulty of DIFFICULTIES) {
-    const cost = costs[difficulty];
-    if (stars < cost) return { label: DIFFICULTY_PROFILES[difficulty].label, cost };
-  }
   for (const mode of RELEASED_MODES) {
     const cost = modeUnlockCost(mode.id);
     if (stars < cost) return { label: mode.name, cost };

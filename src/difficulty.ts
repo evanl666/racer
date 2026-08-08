@@ -1,9 +1,14 @@
 /**
- * Difficulty profiles for the active run.
+ * The difficulty profile for the active run.
  *
- * Speed alone made the three settings feel like the same race at three tempos,
- * so each profile also changes how much traffic is on track, how aggressively it
- * changes lane, how much room it leaves the player, and how forgiving a crash is.
+ * There is exactly one now. Master is the race the game was tuned around — a
+ * full field, top speed, and traffic that will not move over for you — and
+ * shipping softer settings alongside it just let players opt out of the thing
+ * worth playing.
+ *
+ * The profile is still a record keyed by difficulty rather than a bare object,
+ * so a second setting is a data change here plus a menu control, not a refactor
+ * of everything that reads `tuning`.
  *
  * Kept in its own tiny module so player.ts and ai.ts can read it without
  * importing the run or mode machinery, which would create an import cycle.
@@ -32,28 +37,6 @@ export interface DifficultyProfile {
 }
 
 export const DIFFICULTY_PROFILES: Record<Difficulty, DifficultyProfile> = {
-  normal: {
-    label: 'NORMAL',
-    blurb: '24 车 · 基准速度 · AI 会让路',
-    playerSpeed: 1,
-    trafficSpeed: 1,
-    carCount: 24,
-    aiSafetyScale: 0.85,
-    aiDecisionScale: 0.85,
-    maxSimultaneousAi: 3,
-    invincibleSeconds: 1.25
-  },
-  turbo: {
-    label: 'TURBO',
-    blurb: '30 车 · 更快 · AI 更早并线',
-    playerSpeed: 1.22,
-    trafficSpeed: 1.2,
-    carCount: 30,
-    aiSafetyScale: 0.58,
-    aiDecisionScale: 0.58,
-    maxSimultaneousAi: 4,
-    invincibleSeconds: 1.0
-  },
   master: {
     label: 'MASTER',
     blurb: '36 车 · 最快 · AI 几乎不让路',
@@ -68,18 +51,19 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, DifficultyProfile> = {
 };
 
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
-  normal: DIFFICULTY_PROFILES.normal.label,
-  turbo: DIFFICULTY_PROFILES.turbo.label,
   master: DIFFICULTY_PROFILES.master.label
 };
 
-export const DIFFICULTIES: Difficulty[] = ['normal', 'turbo', 'master'];
+/** The only setting, and the one every run starts on. */
+export const DEFAULT_DIFFICULTY: Difficulty = 'master';
+
+export const DIFFICULTIES: Difficulty[] = ['master'];
 
 /** The profile in force, plus the mode's traffic scale folded into `traffic`. */
 export const tuning = {
-  profile: DIFFICULTY_PROFILES.normal,
-  player: 1,
-  traffic: 1
+  profile: DIFFICULTY_PROFILES.master,
+  player: DIFFICULTY_PROFILES.master.playerSpeed,
+  traffic: DIFFICULTY_PROFILES.master.trafficSpeed
 };
 
 export function applyTuning(difficulty: Difficulty, trafficScale: number): void {

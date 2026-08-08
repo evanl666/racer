@@ -6,11 +6,17 @@
  * talk about. That is what turns a leaderboard from a list into a conversation.
  *
  * It runs in two stages on purpose. Stage one is set at the bronze target and
- * nearly everyone clears it, which is what makes stage two — set well past gold,
- * at Master — land as a wall rather than a shrug. The frustration is the point:
- * a challenge everybody beats gives nobody anything to say.
+ * most players clear it, which is what makes stage two — set well past gold —
+ * land as a wall rather than a shrug. The frustration is the point: a challenge
+ * everybody beats gives nobody anything to say.
+ *
+ * Both stages now race the same Master field, since that is the only setting
+ * left, so the whole step between them is the target score. Stage one is a
+ * harder ask than it was when it ran on Normal; the bronze threshold is what
+ * keeps it a warm-up rather than a second wall.
  */
 
+import { DEFAULT_DIFFICULTY } from './difficulty';
 import { RELEASED_MODES, modeById } from './modes';
 import type { Difficulty, ModeId } from './modes/types';
 import { hashSeed } from './rng';
@@ -49,8 +55,8 @@ export function dailyPlan(day: string = todayKey()): DailyPlan {
 export function dailyStage(plan: DailyPlan, stage: 1 | 2): DailyStage {
   const mode = modeById(plan.modeId);
   if (stage === 1) {
-    return { stage: 1, difficulty: 'normal', target: mode.stars[0] };
+    return { stage: 1, difficulty: DEFAULT_DIFFICULTY, target: mode.stars[0] };
   }
-  // Past gold, at the hardest speed: designed so almost nobody clears it.
-  return { stage: 2, difficulty: 'master', target: Math.round(mode.stars[2] * 1.45) };
+  // Past gold: designed so almost nobody clears it.
+  return { stage: 2, difficulty: DEFAULT_DIFFICULTY, target: Math.round(mode.stars[2] * 1.45) };
 }
